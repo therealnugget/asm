@@ -1,0 +1,8 @@
+﻿  Assembling main.asm...
+input.inc(26): warning A6004: procedure argument or local not referenced : key
+input.inc(32): warning A6004: procedure argument or local not referenced : key
+input.inc(49): warning A6004: procedure argument or local not referenced : key
+renderer.inc(102): warning A6004: procedure argument or local not referenced : scale
+main.asm(267): warning A6004: procedure argument or local not referenced : allocSize
+main.asm(277): warning A6004: procedure argument or local not referenced : lpMem
+  asm.vcxproj -> C:\Users\drago\source\repos\asm\x64\Debug\asm.exe
