@@ -1,9 +1,17 @@
 ifndef highestInc
-highestInc equ 1
 .data
+highestInc equ 1
+.code
 ;single defines vector
-SingleDefVec macro singleName, vecName, value
-	singleName equ value
-	vecName real4 singleName, singleName, singleName, singleName, singleName, singleName, singleName, singleName
+SingleDefVec macro vecName, value
+	vecName real4 value, value, value, value, value, value, value, value
+endm
+;single defines xmm vector
+SingleDefVecX macro vecName, value
+	vecName real4 value, value, value, value
+endm
+
+LoadSinglesXmm macro xmmReg, val1, val2, val3, val4
+	
 endm
 endif

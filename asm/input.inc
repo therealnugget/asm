@@ -16,7 +16,8 @@ KEYCODE_MAX equ 176
 
 pressedKeys dq ?
 .code
-GetKey proc key: dword
+;key: dword
+GetKey proc
 	sub rsp, 20h
 	call GetKeyState
 	add rsp, 20h
@@ -24,14 +25,14 @@ GetKey proc key: dword
 	shr eax, KEY_DOWN_BIT_INDEX
 	ret
 GetKey endp
-
-GetPastKey proc key: dword
+;key: dword
+GetPastKey proc
 	mov rdx, pressedKeys
 	mov al, byte ptr [rdx + rcx]
 	ret
 GetPastKey endp
-
-GetKeyDown proc key: dword
+;key: dword
+GetKeyDown proc
 	mov [rbp - 8], rcx
 	sub rsp, 40
 	push rbx

@@ -4,6 +4,7 @@
     <None Include="highestInc.inc" />
     <None Include="input.inc" />
     <None Include="renderer.inc" />
+    <None Include="quaternions.inc" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="main.asm" />

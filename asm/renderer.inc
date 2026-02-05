@@ -8,8 +8,7 @@ MORE_THAN_VEC_CMP_PS equ 5
 cubeVerticesX real4 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5,	-0.5, 0.5, 0.5, -0.5, -0.5, 0.5
-SingleDefVec half, halves, 0.5
-SingleDefVec oneS, oneVec, -1.0
+SingleDefVec halves, 0.5
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 ;;;temp dword 0, 1, 2, 3, 4, 5, 6, 7
 ;;;temp2 dword 8, 9, 10, 11, 12, 13, 14, 15
@@ -17,7 +16,8 @@ NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 
 ;;renders a cube at some location with some scale
 ;;ymm0: scale, ymm1: positionX, ymm2: positionY, ymm3: positionZ
-RenderCubeLocScale proc scale: ymmword
+;scale: ymmword
+RenderCubeLocScale proc
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
 	vmovups ymm5, ymmword ptr [cubeVerticesY]
 	vmovups ymm6, ymmword ptr [cubeVerticesZ]

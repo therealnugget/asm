@@ -1,4 +1,5 @@
 include highestInc.inc
+include quaternions.inc
 include input.inc
 include renderer.inc
 extern GetStdHandle: proc
@@ -18,6 +19,8 @@ extern GetLastError: proc
 extern GetLargestConsoleWindowSize: proc
 extern GetConsoleScreenBufferInfo: proc
 extern SetConsoleDisplayMode: proc
+extern GetConsoleWindow: proc
+extern ShowWindow: proc
 .data
 CONSOLE_FULLSCREEN_MODE equ 1
 CONSOLE_WINDOWED_MODE equ 2
@@ -31,34 +34,46 @@ HEAP_ZERO_MEMORY equ 8
 STD_OUTPUT_HANDLE equ -11
 small_rect_size equ sizeof SMALL_RECT
 bits_in_byte equ 8
+SW_MAXIMIZE equ 3
 
 COORD struct
-X dw 0
-Y dw 0
+	X dw 0
+	Y dw 0
 COORD ends
 SMALL_RECT struct
-Left dw ?
-Top dw ?
-Right dw ?
-Bottom dw ?
+	Left dw ?
+	Top dw ?
+	Right dw ?
+	Bottom dw ?
 SMALL_RECT ends
 Char union
-;;wide char
-UnicodeChar dw ?
-;;char
-AsciiChar db ?
-Char ends
-CHAR_INFO struct
-charUnion Char {0}
-Attributes dw ?
+	;;wide char
+	UnicodeChar dw ?
+	;;char
+	AsciiChar db ?
+	Char ends
+	CHAR_INFO struct
+	charUnion Char {0}
+	Attributes dw ?
 CHAR_INFO ends
 CONSOLE_SCREEN_BUFFER_INFO struct
-dwSize COORD {?, ?}
-dwCursorPosition COORD {?, ?}
-wAttributes dw ?
-srWindow SMALL_RECT {?}
-dwMaximumWindowSize COORD {?, ?}
+	dwSize COORD {?, ?}
+	dwCursorPosition COORD {?, ?}
+	wAttributes dw ?
+	srWindow SMALL_RECT {?}
+	dwMaximumWindowSize COORD {?, ?}
 CONSOLE_SCREEN_BUFFER_INFO ends
+CONSOLE_SCREEN_BUFFER_INFOEX struct
+	cbSize dd ?
+	dwSize COORD {?}
+	dwCursorPosition COORD {?}
+	wAttributes dw ?
+	srWindow SMALL_RECT {?}
+	dwMaximumWindowSize COORD {?}
+	wPopupAttributes dw ?
+	bFullScreenSupported db ?
+	ColorTable dd ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+CONSOLE_SCREEN_BUFFER_INFOEX ends
 
 charBuffer dq ?
 stdOutHandle dq ?
@@ -66,11 +81,13 @@ heapHandle dq ?
 charBufferMaxVal SMALL_RECT {?, ?, ?, ?}
 charBufferLen dd ?
 maxCharValue dd ?
-SingleDefVec cubeScale, cubeScaleVec, 1.0
-SingleDefVec squarePosXS, squarePositionX, 0.0
-SingleDefVec squarePosYS, squarePositionY, 0.0
-SingleDefVec squarePosZS, squarePositionZ, -5.0
+SingleDefVec cubeScaleVec, 1.0
+SingleDefVec squarePositionX, 0.0
+SingleDefVec squarePositionY, 0.0
+SingleDefVec squarePositionZ, -5.0
 moveSpeed real4 0.05
+origRotation real4 1.0, 2.0, 3.0, 4.0
+tempRotation real4 5.0, 6.0, 7.0, 8.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
 ;;bool[KEYCODE_MAX]
@@ -118,6 +135,11 @@ main proc
 	jne noStdHandleError
 	call DebugBreak
 noStdHandleError:
+
+	call GetConsoleWindow
+	mov rcx, rax
+	mov rdx, SW_MAXIMIZE
+	call ShowWindow
 
 	sub rsp, sizeof CONSOLE_SCREEN_BUFFER_INFO
 	mov rcx, stdOutHandle
@@ -189,13 +211,13 @@ mainLoopHead:
 		mov byte ptr [rax + rcx * sizeof byte - sizeof byte], dl
 		loop charAssignHead
 
-		ConvInputToVec KEYCODE_W, KEYCODE_S
+		ConvInputToVec KEYCODE_Q, KEYCODE_E
 		LoadPosFromInp squarePositionZ
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
 		LoadPosFromInp squarePositionX
 
-		ConvInputToVec KEYCODE_Q, KEYCODE_E
+		ConvInputToVec KEYCODE_S, KEYCODE_W
 		LoadPosFromInp squarePOsitionY
 
 		vmovups ymm0, ymmword ptr [cubeScaleVec]
@@ -239,8 +261,8 @@ afterMainLoop:
 	ret
 main endp
 ;;does not give mutual exclusion.
-
-MemAlloc proc allocSize: qword
+;allocSize: qword
+MemAlloc proc
 	mov r8, rcx
 	mov rcx, heapHandle
 	mov rdx, HEAP_NO_SERIALIZE
@@ -249,8 +271,8 @@ MemAlloc proc allocSize: qword
 	add rsp, 32
 	ret
 MemAlloc endp
-
-MemFree proc lpMem: qword
+;lpMem: qword
+MemFree proc
 	mov r8, rcx
 	mov rcx, heapHandle
 	mov rdx, HEAP_NO_SERIALIZE
