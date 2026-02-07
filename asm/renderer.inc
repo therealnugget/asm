@@ -3,16 +3,40 @@ renderer equ 1
 .data
 SHUFFLE_ODD equ 136
 SHUFFLE_EVEN equ 221
+SHUFFLE_HIGH_TO_LOW_128 equ 500
 MORE_THAN_VEC_CMP_PS equ 5
+INSERT_0_TO_0 equ 0h
+INSERT_0_TO_1 equ 10h
+INSERT_0_TO_2 equ 20h
+
+INSERT_1_TO_0 equ 40h
+INSERT_1_TO_1 equ 50h
+INSERT_1_TO_2 equ 60h
+
+INSERT_2_TO_0 equ 80h
+INSERT_2_TO_1 equ 90h
+INSERT_2_TO_2 equ 0a0h
+
 ;default cube veritces
 cubeVerticesX real4 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5,	-0.5, 0.5, 0.5, -0.5, -0.5, 0.5
 SingleDefVec halves, 0.5
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
-;;;temp dword 0, 1, 2, 3, 4, 5, 6, 7
-;;;temp2 dword 8, 9, 10, 11, 12, 13, 14, 15
+temp db 0
 .code
+
+RestoreVertices macro
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 5]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 6]
+	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 7]
+endm
+
+StoreVertices macro
+	movups xmmword ptr [rbp - sizeof ymmword * 5], xmm4
+	movups xmmword ptr [rbp - sizeof ymmword * 6], xmm5
+	movups xmmword ptr [rbp - sizeof ymmword * 7], xmm6
+endm
 
 ;;renders a cube at some location with some scale
 ;;ymm0: scale, ymm1: positionX, ymm2: positionY, ymm3: positionZ
@@ -24,6 +48,46 @@ RenderCubeLocScale proc
 	vmulps ymm4, ymm4, ymm0
 	vmulps ymm5, ymm5, ymm0
 	vmulps ymm6, ymm6, ymm0
+	
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof ymmword * 7 + 20h
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymm0
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm1
+	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm2
+	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm3
+	vmovups ymmword ptr [rbp - sizeof ymmword * 5], ymm4
+	vmovups ymmword ptr [rbp - sizeof ymmword * 6], ymm5
+	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm6
+
+	mov al, temp
+	inc al
+	mov temp, al
+
+
+	movups xmm0, xmmword ptr [tempQuat]
+	call QuatAngleAxis
+
+	RestoreVertices
+	insertps xmm1, xmm4, INSERT_0_TO_0
+	insertps xmm1, xmm5, INSERT_0_TO_1
+	insertps xmm1, xmm6, INSERT_0_TO_2
+	call QuatMultVec
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 5]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 6]
+	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 7]
+	insertps xmm4, xmm0, INSERT_0_TO_0
+	insertps xmm5, xmm0, INSERT_1_TO_0
+	insertps xmm6, xmm0, INSERT_2_TO_0
+
+
+	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword]
+	vmovups ymm1, ymmword ptr [rbp - sizeof ymmword * 2]
+	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword * 3]
+	vmovups ymm3, ymmword ptr [rbp - sizeof ymmword * 4]
+	mov rsp, rbp
+	pop rbp
+
 	vaddps ymm4, ymm4, ymm1
 	vaddps ymm5, ymm5, ymm2
 	vaddps ymm6, ymm6, ymm3
@@ -37,7 +101,7 @@ RenderCubeLocScale proc
 
 	vpxor ymm7, ymm7, ymm7
 	vcmpps ymm7, ymm6, ymm7, MORE_THAN_VEC_CMP_PS; z more than zero ==> not visible to player
-	;;vpxor ymm8, ymm8, NanVec
+	;;vpxor ymm8, ymm8, ymmword ptr [NanVec]
 	;;vpand ymm4, ymm4, ymm8
 	;;vpand ymm5, ymm5, ymm8
 	vpor ymm4, ymm4, ymm7

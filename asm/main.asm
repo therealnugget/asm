@@ -85,9 +85,9 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec squarePositionX, 0.0
 SingleDefVec squarePositionY, 0.0
 SingleDefVec squarePositionZ, -5.0
-moveSpeed real4 0.05
-origRotation real4 1.0, 2.0, 3.0, 4.0
-tempRotation real4 5.0, 6.0, 7.0, 8.0
+moveSpeed real4 0.1
+tempQuat real4 0.0, 0.0, 1.0, 0.1
+tempVec real4 2.0, 0.0, 0.0, 0.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
 ;;bool[KEYCODE_MAX]
