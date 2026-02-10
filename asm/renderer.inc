@@ -3,28 +3,89 @@ renderer equ 1
 .data
 SHUFFLE_ODD equ 136
 SHUFFLE_EVEN equ 221
-SHUFFLE_HIGH_TO_LOW_128 equ 500
 MORE_THAN_VEC_CMP_PS equ 5
+
+EXTRACT_LOW_WORD equ 0
+
 INSERT_0_TO_0 equ 0h
 INSERT_0_TO_1 equ 10h
 INSERT_0_TO_2 equ 20h
+INSERT_0_TO_3 equ 30h
 
 INSERT_1_TO_0 equ 40h
 INSERT_1_TO_1 equ 50h
 INSERT_1_TO_2 equ 60h
+INSERT_1_TO_3 equ 70h
 
 INSERT_2_TO_0 equ 80h
 INSERT_2_TO_1 equ 90h
 INSERT_2_TO_2 equ 0a0h
+INSERT_2_TO_3 equ 0b0h
+
+INSERT_3_TO_0 equ 0c0h
+INSERT_3_TO_1 equ 0d0h
+INSERT_3_TO_2 equ 0e0h
 
 ;default cube veritces
 cubeVerticesX real4 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5,	-0.5, 0.5, 0.5, -0.5, -0.5, 0.5
 SingleDefVec halves, 0.5
+SingledefVec zeroVec, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
-temp db 0
+rotationX db 0
+rotationY db 0
 .code
+
+ConvertHorizonPtToVert macro addX, addY, addZ, MAX_RET_LOC, VERTEX_OFFSET
+	RestoreVertices
+
+	vmovups ymmword ptr [MAX_RET_LOC - sizeof ymmword], ymm4
+	vmovups ymmword ptr [MAX_RET_LOC - sizeof ymmword * 2], ymm5
+	vmovups ymmword ptr [MAX_RET_LOC - sizeof ymmword * 3], ymm6
+
+	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword + VERTEX_OFFSET]
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4], eax;load x vertex from ymm4 into MAX_RET_LOC - sizeof ymmword * 4
+	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword * 2 + VERTEX_OFFSET]
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 1], eax;load y vertex from ymm5 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4
+	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword * 3 + VERTEX_OFFSET]
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2], eax;load z vertex from ymm6 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2
+	
+	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4];now x vertex is in xmm1, y vertex is in xmm1 + sizeof real4, and z vertex is in xmm1 + sizeof real4 * 2, last real4 part is dummy memory.
+endm
+
+RotateVertices macro STORE_LOCATION, VERTEX_OFFSET
+
+	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
+	
+	mov al, rotationX
+	movups xmm0, xmmword ptr [XAxis]
+	call QuatAngleAxis
+	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
+
+	mov al, rotationY
+	movups xmm0, xmmword ptr [YAxis]
+	call QuatAngleAxis
+	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
+	call QuatMult
+
+	ConvertHorizonPtToVert rotPosXX, rotPosXY, rotPosXZ, MAX_RET_LOC, VERTEX_OFFSET
+
+	call QuatMultVec
+	vmovups ymmword ptr [rsp], ymm0
+	mov eax, dword ptr [rsp + sizeof real4 * 0]
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 1], eax
+	mov eax, dword ptr [rsp + sizeof real4 * 1]
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 2], eax
+	mov eax, dword ptr [rsp + sizeof real4 * 2]
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 3], eax
+endm
+
+RestoreDefaultPoints macro
+	vmovups ymm4, ymmword ptr [cubeVerticesX]
+	vmovups ymm5, ymmword ptr [cubeVerticesY]
+	vmovups ymm6, ymmword ptr [cubeVerticesZ]
+endm
 
 RestoreVertices macro
 	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 5]
@@ -32,10 +93,9 @@ RestoreVertices macro
 	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 7]
 endm
 
-StoreVertices macro
-	movups xmmword ptr [rbp - sizeof ymmword * 5], xmm4
-	movups xmmword ptr [rbp - sizeof ymmword * 6], xmm5
-	movups xmmword ptr [rbp - sizeof ymmword * 7], xmm6
+
+RestorePoint macro STORE_LOCATION
+	movups xmm0, xmmword ptr [STORE_LOCATION]
 endm
 
 ;;renders a cube at some location with some scale
@@ -45,13 +105,14 @@ RenderCubeLocScale proc
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
 	vmovups ymm5, ymmword ptr [cubeVerticesY]
 	vmovups ymm6, ymmword ptr [cubeVerticesZ]
+
 	vmulps ymm4, ymm4, ymm0
 	vmulps ymm5, ymm5, ymm0
 	vmulps ymm6, ymm6, ymm0
 	
 	push rbp
 	mov rbp, rsp
-	sub rsp, sizeof ymmword * 7 + 20h
+	sub rsp, sizeof ymmword * 7 + sizeof ymmword * 3 + 20h + sizeof ymmword * 4 + sizeof xmmword
 	vmovups ymmword ptr [rbp - sizeof ymmword], ymm0
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm1
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm2
@@ -60,25 +121,23 @@ RenderCubeLocScale proc
 	vmovups ymmword ptr [rbp - sizeof ymmword * 6], ymm5
 	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm6
 
-	mov al, temp
-	inc al
-	mov temp, al
+	rotated_points_loc equ rbp - sizeof ymmword * 7
 
+	RotateVertices rotated_points_loc, sizeof real4 * 0
+	RotateVertices rotated_points_loc, sizeof real4 * 1
+	RotateVertices rotated_points_loc, sizeof real4 * 2
+	RotateVertices rotated_points_loc, sizeof real4 * 3
 
-	movups xmm0, xmmword ptr [tempQuat]
-	call QuatAngleAxis
-
+	RotateVertices rotated_points_loc, sizeof real4 * 4
+	RotateVertices rotated_points_loc, sizeof real4 * 5
+	RotateVertices rotated_points_loc, sizeof real4 * 6
+	RotateVertices rotated_points_loc, sizeof real4 * 7
+	
 	RestoreVertices
-	insertps xmm1, xmm4, INSERT_0_TO_0
-	insertps xmm1, xmm5, INSERT_0_TO_1
-	insertps xmm1, xmm6, INSERT_0_TO_2
-	call QuatMultVec
-	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 5]
-	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 6]
-	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 7]
-	insertps xmm4, xmm0, INSERT_0_TO_0
-	insertps xmm5, xmm0, INSERT_1_TO_0
-	insertps xmm6, xmm0, INSERT_2_TO_0
+
+	vmovups ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword * 1]
+	vmovups ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword * 2]
+	vmovups ymm6, ymmword ptr [rotated_points_loc - sizeof ymmword * 3]
 
 
 	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword]

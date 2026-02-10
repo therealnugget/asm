@@ -85,9 +85,12 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec squarePositionX, 0.0
 SingleDefVec squarePositionY, 0.0
 SingleDefVec squarePositionZ, -5.0
+SingleDefVec squarePositionRotX, 0.0
+SingleDefVec squarePositionRotY, 0.0
+SingleDefVec squarePositionRotZ, -5.0
 moveSpeed real4 0.1
-tempQuat real4 0.0, 0.0, 1.0, 0.1
-tempVec real4 2.0, 0.0, 0.0, 0.0
+XAxis real4 1.0, 0.0, 0.0, 0.0
+YAxis real4 0.0, 1.0, 0.0, 0.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
 ;;bool[KEYCODE_MAX]
@@ -109,12 +112,42 @@ ConvInputToVec macro posKey, negKey
 	vbroadcastss ymm0, xmm0
 endm
 
-;takes input from ymm0, adds to positionVec in ymm1, stores in memory in positionVec
-LoadPosFromInp macro positionVec
-	vmovups ymm1, ymmword ptr [positionVec]
-	vaddps ymm0, ymm0, ymm1
-	vmovups ymmword ptr [positionVec], ymm0
+;uses xmm0. mov scalar to scalar with memory
+MovS2SMem macro memDst, memSrc
+	movss xmm0, memSrc
+	movss memDst, xmm0
 endm
+
+;uses ymm0. mov vector to vector with memory
+MovV2VMem macro memDst, memSrc
+	movups xmm0, memSrc
+	movups memDst, xmm0
+endm
+
+;takes input from posKey and negKey, subtracts (stack push/poop), stores it in bl. real4Loc is the location to set to 1.0 if either key is pressed
+ConvInputToScalar macro posKey, negKey, rotation, axis
+	mov ecx, posKey
+	call GetKey
+	mov ebx, eax
+	mov ecx, 0
+	or ecx, ebx
+	push rbx
+	push rcx
+	mov ecx, negKey
+	call GetKey
+	pop rcx
+	or ecx, eax
+	pop rbx
+	sub bl, al
+	add rotation, bl
+endm
+
+;takes input from ymm0, adds to destVec in ymm1, stores in memory in destVec
+LoadValFromInp macro destVec
+	vaddps ymm0, ymm0, ymmword ptr [destVec]
+	vmovups ymmword ptr [destVec], ymm0
+endm
+
 
 main proc
 
@@ -122,7 +155,8 @@ main proc
 	push rbp
 	mov rbp, rsp
 
-	sub rsp, (16 + 32);32 bytes of shadow stack space + 8 bytes for the fifth argument + another 8 bytes to keep func stack aligned by 16 bytes
+	;the sizeof xmmword on the end is to calculate the cube's position rotation for the x axis, so that when that of the y is calculated, the x can be loaded back in before the quaternions are multiplied.
+	sub rsp, (16 + 32) + sizeof xmmword;32 bytes of shadow stack space + 8 bytes for the fifth argument + another 8 bytes to keep func stack aligned by 16 bytes
 	
 	call GetProcessHeap
 	mov heapHandle, rax
@@ -211,19 +245,50 @@ mainLoopHead:
 		mov byte ptr [rax + rcx * sizeof byte - sizeof byte], dl
 		loop charAssignHead
 
-		ConvInputToVec KEYCODE_Q, KEYCODE_E
-		LoadPosFromInp squarePositionZ
-
 		ConvInputToVec KEYCODE_D, KEYCODE_A
-		LoadPosFromInp squarePositionX
+		LoadValFromInp squarePositionX
 
 		ConvInputToVec KEYCODE_S, KEYCODE_W
-		LoadPosFromInp squarePOsitionY
+		LoadValFromInp squarePositionY
+
+		ConvInputToVec KEYCODE_Q, KEYCODE_E
+		LoadValFromInp squarePositionZ
+		
+		ConvInputToScalar KEYCODE_RIGHT, KEYCODE_LEFT, rotationY, YAxis
+		ConvInputToScalar KEYCODE_UP, KEYCODE_DOWN, rotationX, XAxis
+
+		mov al, byte ptr [rotationX]
+		movups xmm0, xmmword ptr [XAxis]
+		call QuatAngleAxis
+		movups [rbp - KEYCODE_MAX - sizeof xmmword], xmm0
+
+		mov al, byte ptr [rotationY]
+		movups xmm0, xmmword ptr [YAxis]
+		call QuatAngleAxis
+		movups xmm1, [rbp - KEYCODE_MAX - sizeof xmmword]
+		call QuatMult
+
+		movd xmm1, dword ptr [squarePositionX]
+		insertps xmm1, real4 ptr [squarePositionY], INSERT_0_TO_1
+		insertps xmm1, real4 ptr [squarePositionZ], INSERT_0_TO_2
+		call QuatMultVec
+		movss xmm1, xmm0
+		vbroadcastss ymm1, xmm1
+		vmovups ymmword ptr [squarePositionRotX], ymm1
+		extractps eax, xmm0, 1
+		movd xmm1, eax
+		vbroadcastss ymm1, xmm1
+		vmovups ymmword ptr [squarePositionRotY], ymm1
+		extractps eax, xmm0, 2
+		movd xmm1, eax
+		vbroadcastss ymm1, xmm1
+		vmovups ymmword ptr [squarePositionRotZ], ymm1
+
 
 		vmovups ymm0, ymmword ptr [cubeScaleVec]
-		vmovups ymm1, ymmword ptr [squarePositionX]
-		vmovups ymm2, ymmword ptr [squarePositionY]
-		vmovups ymm3, ymmword ptr [squarePositionZ]
+		vmovups ymm1, ymmword ptr [squarePositionRotX]
+		vmovups ymm2, ymmword ptr [squarePositionRotY]
+		vmovups ymm3, ymmword ptr [squarePositionRotZ]
 		call RenderCubeLocScale
 
 		mov rcx, stdOutHandle

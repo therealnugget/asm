@@ -21,7 +21,7 @@ PI_ON_4 equ 63
 SingleDefVec negOneVec, -1.0
 SingleDefVec twoVec, 2.0
 SingleDefVec negTwoVec, -2.0
-twoFiddyfahv real4 255.0
+MAX_SIN_AMP real4 127.0
 one real4 1.0
 zero real4 0.0
 negTwo real4 -2.0
@@ -38,21 +38,17 @@ ABS_VALUE_MASK dd 7FFFFFFFh, 0, 0, 0
 QUATERNION_W_EXTRACTION dd 0, 0, 0, -1
 QUATERNION_XYZ_EXTRACTION dd -1, -1, -1, 0
 
-sinLookupTable db 0, 6, 13, 19, 25, 31, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92, 98
-db 104, 109, 115, 121, 126, 132, 137, 142, 147, 152, 157, 162, 167, 172, 176, 181, 185, 190, 194, 198, 202, 205
-db 209, 213, 216, 219, 222, 225, 228, 231, 234, 236, 238, 241, 243, 244, 246, 248
-db 249, 250, 251, 252, 253, 254, 254, 255, 255, 255, 255, 255, 254, 254, 253, 252, 251, 250, 248, 247, 245, 243
-db 242, 239, 237, 235, 232, 230, 227, 224, 221, 218, 214, 211, 207, 203, 200, 196
-db 192, 187, 183, 179, 174, 169, 165, 160, 155, 150, 145, 140, 134, 129, 123, 118, 112, 107, 101, 95, 89, 83, 77
-db 71, 65, 59, 53, 47, 41, 34, 28, 22, 16, 9, 3, -3, -9, -16, -22, -28, -34, -41, -47, -53, -59, -65, -71, -77
-db -83, -89, -95, -101, -107, -112, -118, -123, -129, -134, -140, -145, -150, -155
-db -160, -165, -169, -174, -179, -183, -187, -192, -196, -200, -203, -207, -211, -214
-db -218, -221, -224, -227, -230, -232, -235, -237, -239, -242, -243, -245, -247, -248, -250, -251, -252, -253
-db -254, -254, -255, -255, -255, -255, -255, -254, -254, -253, -252, -251, -250, -249, -248, -246, -244, -243
-db -241, -238, -236, -234, -231, -228, -225, -222, -219, -216, -213, -209, -205
-db -202, -198, -194, -190, -185, -181, -176, -172, -167, -162, -157, -152, -147, -142, -137, -132, -126, -121
-db -115, -109, -104, -98, -92, -86, -80, -74, -68, -62, -56, -50, -44, -38, -31, -25
-db -19, -13, -6
+sinLookupTable db 0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 34, 37, 39, 42, 45, 48, 51, 54, 57, 60, 62, 65, 68, 70, 73
+db 75, 78, 80, 83, 85, 87, 90, 92, 94, 96, 98, 100, 102, 104, 106, 107, 109, 110, 112, 113, 115, 116, 117, 118, 120
+db 121, 122, 122, 123, 124, 125, 125, 126, 126, 126, 127, 127, 127, 127, 127, 127, 127, 126, 126, 126, 125, 125, 124
+db 123, 122, 122, 121, 120, 118, 117, 116, 115, 113, 112, 110, 109, 107, 106, 104, 102, 100, 98, 96, 94, 92, 90, 87, 85
+db 83, 80, 78, 75, 73, 70, 68, 65, 62, 60, 57, 54, 51, 48, 45, 42, 39, 37, 34, 30, 27, 24, 21, 18, 15, 12, 9, 6, 3, 0
+db -4, -7, -10, -13, -16, -19, -22, -25, -28, -31, -35, -38, -40, -43, -46, -49, -52, -55, -58, -61, -63, -66, -69, -71
+db -74, -76, -79, -81, -84, -86, -88, -91, -93, -95, -97, -99, -101, -103, -105, -107, -108, -110, -111, -113, -114, -116
+db -117, -118, -119, -121, -122, -123, -123, -124, -125, -126, -126, -127, -127, -127, -128, -128, -128, -128, -128, -128
+db -128, -127, -127, -127, -126, -126, -125, -124, -123, -123, -122, -121, -119, -118, -117, -116, -114, -113, -111, -110
+db -108, -107, -105, -103, -101, -99, -97, -95, -93, -91, -88, -86, -84, -81, -79, -76, -74, -71, -69, -66, -63, -61, -58
+db -55, -52, -49, -46, -43, -40, -38, -35, -31, -28, -25, -22, -19, -16, -13, -10, -7, -4
 
 Quaternion struct
 	real4 x 0.0
@@ -62,7 +58,6 @@ Quaternion struct
 Quaternion ends
 
 .code
-;TODO: test if this function works
 ;xmm0: angle in radians. returns arccos in xmm0
 Acos proc
 	movaps xmm2, xmm0
@@ -149,6 +144,7 @@ QuatMult proc
 	movaps xmm4, xmm0
 	movaps xmm5, xmm1
 
+	;;TODO: make this more efficient
 	;;i copied out this code so that i didn't have to call VecCross, that way i don't have to push and pop xmm3. the alternatives being to push and pop (very slow), or to assume that the function leaves it unaffected (incredibly error-prone and bad convention).
 	movaps xmm2, xmm0
 	pshufd xmm0, xmm0, SHUFFLE_CROSS_X_0
@@ -166,7 +162,7 @@ QuatMult proc
 	dpps xmm4, xmm5, VECTOR_DOT_MASK
 	mulss xmm1, xmm3
 	subss xmm1, xmm4
-	insertps xmm0, xmm1, INSERT_W_TO_W
+	insertps xmm0, xmm1, INSERT_X_TO_W
 
 	ret
 QuatMult endp
@@ -295,6 +291,7 @@ QuatAngleAxis proc
 	movzx ax, al
 	mov cl, 2
 	div cl
+	movzx ax, al
 	mov word ptr [rbp - sizeof word], ax
 	call Sin
 	movss xmm2, xmm0
@@ -317,7 +314,6 @@ QuatAngleAxis proc
 	ret
 QuatAngleAxis endp
 
-;TODO: test if this function works
 ;al: a value in the range [0:255] which represents where on the curve to look up. returns an approximate sin value in xmm0.
 Sin proc
 	mov cl, 255
@@ -326,13 +322,12 @@ Sin proc
 	movzx eax, al
 	lea rcx, sinLookupTable
 	mov cl, byte ptr [rcx + rax]
-	movzx ecx, cl
-	cvtsi2ss xmm0, rcx
-	divss xmm0, twoFiddyfahv
+	movsx ecx, cl
+	cvtsi2ss xmm0, ecx
+	divss xmm0, MAX_SIN_AMP
 	ret
 Sin endp
 
-;TODO: test if this function works
 ;al: a value in the range [0:255] which represents where on the curve to look up. returns an approximate cos value in xmm0.
 Cos proc
 	movzx cx, al
