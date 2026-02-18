@@ -85,15 +85,21 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec squarePositionX, 0.0
 SingleDefVec squarePositionY, 0.0
 SingleDefVec squarePositionZ, -5.0
-SingleDefVec squarePositionRotX, 0.0
-SingleDefVec squarePositionRotY, 0.0
-SingleDefVec squarePositionRotZ, -5.0
+SingleDefVec squarePositionRotXX, 0.0
+SingleDefVec squarePositionRotXY, 0.0
+SingleDefVec squarePositionRotXZ, 0.0
+SingleDefVec squarePositionRotYX, 0.0
+SingleDefVec squarePositionRotYY, 0.0
+SingleDefVec squarePositionRotYZ, 0.0
 moveSpeed real4 0.1
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
-;;bool[KEYCODE_MAX]
+isRotX db ?
+isRotY db ?
+rotXForPos db 0
+rotYForPos db 0
 .code
 
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in xmm0, multiplies by moveSpeed then broadcasts to ymmReg
@@ -124,22 +130,24 @@ MovV2VMem macro memDst, memSrc
 	movups memDst, xmm0
 endm
 
-;takes input from posKey and negKey, subtracts (stack push/poop), stores it in bl. real4Loc is the location to set to 1.0 if either key is pressed
-ConvInputToScalar macro posKey, negKey, rotation, axis
+;takes input from posKey and negKey, subtracts (stack push/poop), stores it in bl.
+ConvInputToScalar macro posKey, negKey, rotation, axis, keyBool, rotationForPos
 	mov ecx, posKey
 	call GetKey
 	mov ebx, eax
-	mov ecx, 0
-	or ecx, ebx
 	push rbx
-	push rcx
+	sub rsp, 28h
 	mov ecx, negKey
 	call GetKey
-	pop rcx
-	or ecx, eax
+	add rsp, 28h
 	pop rbx
+	mov byte ptr [keyBool], bl
+	or byte ptr [keyBool], al
+	shl bl, 1
+	shl al, 1
 	sub bl, al
-	add rotation, bl
+	mov byte ptr [rotationForPos], bl
+	add byte ptr [rotation], bl
 endm
 
 ;takes input from ymm0, adds to destVec in ymm1, stores in memory in destVec
@@ -148,6 +156,17 @@ LoadValFromInp macro destVec
 	vmovups ymmword ptr [destVec], ymm0
 endm
 
+CalcRot macro rotation, axis
+	mov al, byte ptr [rotation]
+	movups xmm0, xmmword ptr [axis]
+	call QuatAngleAxis
+endm
+
+LoadRotPosAxis macro pos
+	vbroadcastss ymm1, xmm1
+
+	vmovups ymmword ptr [pos], ymm1
+endm
 
 main proc
 
@@ -253,42 +272,54 @@ mainLoopHead:
 
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
 		LoadValFromInp squarePositionZ
-		
-		ConvInputToScalar KEYCODE_RIGHT, KEYCODE_LEFT, rotationY, YAxis
-		ConvInputToScalar KEYCODE_UP, KEYCODE_DOWN, rotationX, XAxis
 
-		mov al, byte ptr [rotationX]
-		movups xmm0, xmmword ptr [XAxis]
-		call QuatAngleAxis
+		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY, YAxis, isRotY, rotYForPos
+		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX, XAxis, isRotX, rotXForPos
+
+		cmp byte ptr [isRotX], 0
+		jz fromNoX
+
+		CalcRot rotXForPos, XAxis
 		movups [rbp - KEYCODE_MAX - sizeof xmmword], xmm0
 
-		mov al, byte ptr [rotationY]
-		movups xmm0, xmmword ptr [YAxis]
-		call QuatAngleAxis
+		cmp byte ptr [isRotY], 0
+		jz rotation
+		jmp bothRot
+	fromNoX:
+		cmp byte ptr [isRotY], 0
+		jz noRotation
+
+	checkYRot:
+		CalcRot rotYForPos, YAxis
+		jmp rotation
+	bothRot:
+		CalcRot rotYForPos, YAxis
 		movups xmm1, [rbp - KEYCODE_MAX - sizeof xmmword]
 		call QuatMult
 
+	rotation:
 		movd xmm1, dword ptr [squarePositionX]
 		insertps xmm1, real4 ptr [squarePositionY], INSERT_0_TO_1
 		insertps xmm1, real4 ptr [squarePositionZ], INSERT_0_TO_2
 		call QuatMultVec
+
 		movss xmm1, xmm0
-		vbroadcastss ymm1, xmm1
-		vmovups ymmword ptr [squarePositionRotX], ymm1
+		LoadRotPosAxis squarePositionX
+		
 		extractps eax, xmm0, 1
 		movd xmm1, eax
-		vbroadcastss ymm1, xmm1
-		vmovups ymmword ptr [squarePositionRotY], ymm1
+		LoadRotPosAxis squarePositionY
+		
 		extractps eax, xmm0, 2
 		movd xmm1, eax
-		vbroadcastss ymm1, xmm1
-		vmovups ymmword ptr [squarePositionRotZ], ymm1
+		LoadRotPosAxis squarePositionZ
 
+	noRotation:
 
 		vmovups ymm0, ymmword ptr [cubeScaleVec]
-		vmovups ymm1, ymmword ptr [squarePositionRotX]
-		vmovups ymm2, ymmword ptr [squarePositionRotY]
-		vmovups ymm3, ymmword ptr [squarePositionRotZ]
+		vmovups ymm1, ymmword ptr [squarePositionX]
+		vmovups ymm2, ymmword ptr [squarePositionY]
+		vmovups ymm3, ymmword ptr [squarePositionZ]
 		call RenderCubeLocScale
 
 		mov rcx, stdOutHandle

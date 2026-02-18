@@ -27,9 +27,9 @@ INSERT_3_TO_1 equ 0d0h
 INSERT_3_TO_2 equ 0e0h
 
 ;default cube veritces
-cubeVerticesX real4 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5
-cubeVerticesY real4 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5
-cubeVerticesZ real4 0.5, -0.5,	-0.5, 0.5, 0.5, -0.5, -0.5, 0.5
+cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
+cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
+cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
@@ -37,7 +37,7 @@ rotationX db 0
 rotationY db 0
 .code
 
-ConvertHorizonPtToVert macro addX, addY, addZ, MAX_RET_LOC, VERTEX_OFFSET
+ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
 	RestoreVertices
 
 	vmovups ymmword ptr [MAX_RET_LOC - sizeof ymmword], ymm4
@@ -69,7 +69,7 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
 	call QuatMult
 
-	ConvertHorizonPtToVert rotPosXX, rotPosXY, rotPosXZ, MAX_RET_LOC, VERTEX_OFFSET
+	ConvertHorizonPtToVert MAX_RET_LOC, VERTEX_OFFSET
 
 	call QuatMultVec
 	vmovups ymmword ptr [rsp], ymm0
@@ -144,8 +144,6 @@ RenderCubeLocScale proc
 	vmovups ymm1, ymmword ptr [rbp - sizeof ymmword * 2]
 	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword * 3]
 	vmovups ymm3, ymmword ptr [rbp - sizeof ymmword * 4]
-	mov rsp, rbp
-	pop rbp
 
 	vaddps ymm4, ymm4, ymm1
 	vaddps ymm5, ymm5, ymm2
@@ -178,6 +176,27 @@ RenderCubeLocScale proc
 	vaddps ymm4, ymm4, ymm0
 	vaddps ymm5, ymm5, ymm1
 
+	
+	xVertexLoc equ rbp - sizeof ymmword
+	yVertexLoc equ rbp - sizeof ymmword * 2
+	xFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword
+	yFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword * 2
+
+	vmovups ymmword ptr [xVertexLoc], ymm4
+	vmovups ymmword ptr [yVertexLoc], ymm5
+	movups xmm0, xmmword ptr [xVertexLoc]
+	vhsubps xmm0, xmm0, xmmword ptr [xVertexLoc + sizeof xmmword]
+	movups xmm1, xmmword ptr [yVertexLoc]
+	vhsubps xmm1, xmm1, xmmword ptr [yVertexLoc + sizeof xmmword]
+
+lineRenderLoopHead:
+		cvttps2dq xmm0, xmm0
+		cvttps2dq xmm1, xmm1
+
+
+	movss xmm2, xmm0
+	insertps xmm2, xmm1, INSERT_0_TO_1
+
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;y vertices
 	vmulps ymm5, ymm5, ymm2;final doubleword y vertices
@@ -208,7 +227,6 @@ RenderCubeLocScale proc
 	;;;vmovshdup ymm7, ymm4;odd
 	;;;vaddps ymm6, ymm6, ymm7
 
-	sub rsp, sizeof ymmword
 	vmovups ymmword ptr [rsp], ymm0
 	mov ecx, sizeof ymmword / sizeof dword
 renderCharHead:
@@ -217,9 +235,10 @@ renderCharHead:
 		jl loopEnd
 		add rax, charBuffer
 		mov byte ptr [rax], 'O'
-	loopEnd:
-		loop renderCharHead
-	add rsp, sizeof ymmword
+loopEnd:
+	loop renderCharHead
+	mov rsp, rbp
+	pop rbp
 
 	ret
 RenderCubeLocScale endp

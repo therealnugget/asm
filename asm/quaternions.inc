@@ -31,7 +31,7 @@ acos_iteration_0 real4 -0.0187293
 acos_iteration_1 real4 0.0742610
 acos_iteration_2 real4 -0.2121144
 acos_iteration_3 real4 1.5707288
-forward_vector3 real4 0.0, 0.0, 1.0
+forward_vector3 real4 0.0, 0.0, 1.0, 0.0
 pi real4 3.14159265358979
 align 16
 ABS_VALUE_MASK dd 7FFFFFFFh, 0, 0, 0
