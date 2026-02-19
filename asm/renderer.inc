@@ -98,6 +98,47 @@ RestorePoint macro STORE_LOCATION
 	movups xmm0, xmmword ptr [STORE_LOCATION]
 endm
 
+;;;;what do i mean by vertical versus horizontal vertices? here is an example:
+;;;;this is vertical:
+;;;;xmm0: 0, 2, 4, 6
+;;;;xmm1: 1, 3, 5, 7
+;;;;and we want them horizontally sequential, like so:
+;;;;ymm2: 0, 1, 2, 3, 4, 5, 6, 7
+;;;;or even like so:
+;;;;xmm2: 0, 1, 2, 3
+;;;;xmm3: 4, 5, 6, 7
+;;;;ANOTHER ONE
+;;;;vertical:
+;;;;ymm0: x0, x1, x2, x3, x4, x5, x6, x7
+;;;;ymm1: y0, y1, y2, y3, y4, y5, y6, y7
+;;;;to horizontal:
+;;;;xmm2: x0 - x1, x2 - x3, x4 - x5, x6 -x7
+;;;;xmm3: y0 - y1, y2 - y3, y4 - y5, y6 - y7
+
+;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst
+LoadFirstVerticalVertices macro xmmDst, xmmSrc1, xmmSrc2
+	movss xmmDst, xmmSrc1
+	insertps xmmDst, xmmSrc2, INSERT_0_TO_1
+endm
+
+;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst. INDEX 1, not first vertices.
+LoadVerticalVertices1 macro xmmDst, xmmSrc1, xmmSrc2
+	insertps xmmDst, xmmSrc1, INSERT_1_TO_0
+	insertps xmmDst, xmmSrc2, INSERT_1_TO_1
+endm
+
+;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst
+LoadVerticalVertices2 macro xmmDst, xmmSrc1, xmmSrc2
+	insertps xmmDst, xmmSrc1, INSERT_2_TO_0
+	insertps xmmDst, xmmSrc2, INSERT_2_TO_1
+endm
+
+;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst
+LoadVerticalVertices3 macro xmmDst, xmmSrc1, xmmSrc2
+	insertps xmmDst, xmmSrc1, INSERT_3_TO_0
+	insertps xmmDst, xmmSrc2, INSERT_3_TO_1
+endm
+
 ;;renders a cube at some location with some scale
 ;;ymm0: scale, ymm1: positionX, ymm2: positionY, ymm3: positionZ
 ;scale: ymmword
@@ -173,33 +214,73 @@ RenderCubeLocScale proc
 	vmulps ymm0, ymm2, ymmword ptr [halves]
 	vmulps ymm1, ymm3, ymmword ptr [halves]
 
-	vaddps ymm4, ymm4, ymm0
-	vaddps ymm5, ymm5, ymm1
+	vaddps ymm4, ymm4, ymm0;final x floating-point vertices
+	vaddps ymm5, ymm5, ymm1;final y floating-point vertices
 
 	
 	xVertexLoc equ rbp - sizeof ymmword
 	yVertexLoc equ rbp - sizeof ymmword * 2
 	xFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword
 	yFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword * 2
+	shiftedXLoc equ yFinalLoc - sizeof ymmword
+	shiftedYLoc equ yFinalLoc - sizeof ymmword * 2
 
 	vmovups ymmword ptr [xVertexLoc], ymm4
 	vmovups ymmword ptr [yVertexLoc], ymm5
-	movups xmm0, xmmword ptr [xVertexLoc]
-	vhsubps xmm0, xmm0, xmmword ptr [xVertexLoc + sizeof xmmword]
-	movups xmm1, xmmword ptr [yVertexLoc]
-	vhsubps xmm1, xmm1, xmmword ptr [yVertexLoc + sizeof xmmword]
 
+	vpsllq ymm3, ymm4, sizeof real4 * bits_in_byte
+	vmovups ymmword ptr [shiftedXLoc], ymm3
+	last_real4_offset equ sizeof real4 * 7
+	movss real4 ptr [shiftedXLoc + last_real4_offset], xmm4
+	vpsllq ymm3, ymm5, sizeof real4 * bits_in_byte
+	vmovups ymmword ptr [shiftedYLoc], ymm3
+	movss real4 ptr [shiftedYLoc + last_real4_offset], xmm5
+	
+	;;TODO: try to change the movups from mem to xmm and visa-versa to movaps here and test if it works
+	movaps xmm0, xmm4
+	vhsubps xmm0, xmm0, xmmword ptr [xVertexLoc + sizeof xmmword];floating point dif in x
+	movaps xmm1, xmm5
+	vhsubps xmm1, xmm1, xmmword ptr [yVertexLoc + sizeof xmmword];floating point dif in y
+	movups xmm3, xmmword ptr [shiftedXLoc]
+	vhsubps xmm3, xmm3, xmmword ptr [shiftedXLoc + sizeof xmmword];final second point dif in x
+	movups xmm6, xmmword ptr [shiftedYLoc]
+	vhsubps xmm6, xmm6, xmmword ptr [shiftedYLoc + sizeof xmmword];final second point dif in y
+
+	push rbx
+	cvtss2si ebx, xmm2
+
+	LoadVerticalVertices1 xmm7, xmm4, xmm5;final single-precision floating point value pos
+	cvttps2dq xmm7, xmm7;final dword pos
+	LoadFirstVerticalVertices xmm8, xmm4, xmm5;initial pos
+	LoadFirstVerticalVertices xmm9, xmm0, xmm1;difference
 lineRenderLoopHead:
-		cvttps2dq xmm0, xmm0
-		cvttps2dq xmm1, xmm1
+		addps xmm8, xmm9
+		cvttps2dq xmm10, xmm8
+		movd ecx, xmm10
+		pextrd eax, xmm10, 1
+		xor edx, edx
+		mul ebx
+		add eax, ecx
+		add rax, charBuffer
+		mov byte ptr [rax], 'O'
 
+		psubd xmm10, xmm7
+		movd eax, xmm10
+		pextrd ecx, xmm10, 1
+		add eax, ecx
+		cmp eax, 1
+		jg lineRenderLoopHead
 
-	movss xmm2, xmm0
-	insertps xmm2, xmm1, INSERT_0_TO_1
+	pop rbx
+
+	;;;uses: ymm2, ymm4, ymm5
+	;;; | | | | |
+	;;; | | | | |
+	;;; \/\/\/\/\/
 
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
-	vcvttps2dq ymm5, ymm5;y vertices
-	vmulps ymm5, ymm5, ymm2;final doubleword y vertices
+	vmulps ymm5, ymm5, ymm2
+	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 	xor eax, eax
 	mov ax, word ptr [charBufferMaxVal + 4]
 	movd xmm3, eax
