@@ -3,6 +3,7 @@ ifndef quaternionInc
 quaternionInc equ 1
 QUATERNION_DOT_MASK equ 0f1h
 VECTOR_DOT_MASK equ 071h
+VECTOR_2_DOT_MASK equ 031h
 ;;i.e. highest to lowest
 W_TO_X_MASK equ 3h
 SHUFFLE_CROSS_X_0 equ 201
@@ -34,7 +35,7 @@ acos_iteration_3 real4 1.5707288
 forward_vector3 real4 0.0, 0.0, 1.0, 0.0
 pi real4 3.14159265358979
 align 16
-ABS_VALUE_MASK dd 7FFFFFFFh, 0, 0, 0
+ABS_VALUE_MASK_F dd 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh
 QUATERNION_W_EXTRACTION dd 0, 0, 0, -1
 QUATERNION_XYZ_EXTRACTION dd -1, -1, -1, 0
 
@@ -61,7 +62,7 @@ Quaternion ends
 ;xmm0: angle in radians. returns arccos in xmm0
 Acos proc
 	movaps xmm2, xmm0
-	pand xmm0, xmmword ptr [ABS_VALUE_MASK]
+	pand xmm0, xmmword ptr [ABS_VALUE_MASK_F]
 	cmpss xmm2, xmm0, NEQU_VEC_CMP_SS
 	movss xmm1, acos_iteration_0
 	mulss xmm1, xmm0

@@ -351,8 +351,8 @@ afterMainLoop:
 	mov rsp, rbp
 	pop rbp;just good convention to pop base ptr and restore stack ptr
 	pop rbx
-	xor rax, rax; return 0
 	mov rcx, rax; pass non-error arg to ExitProcess(int)
+	sub rsp, 8
 	call ExitProcess
 	ret
 main endp

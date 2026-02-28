@@ -139,6 +139,57 @@ LoadVerticalVertices3 macro xmmDst, xmmSrc1, xmmSrc2
 	insertps xmmDst, xmmSrc2, INSERT_3_TO_1
 endm
 
+RenderLine macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY
+	
+	finalPosLoad xmm7, xmm4, xmm5;final single-precision floating point value pos
+	cvttps2dq xmm7, xmm7;final dword pos
+	initialPosLoad xmm8, xmm4, xmm5;initial pos
+	diffPtLoad xmm9, pointDiffX, pointDiffY;first four differences
+	
+	movaps xmm11, xmm9
+	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
+	pand xmm9, xmmword ptr [ABS_VALUE_MASK_F]
+	rsqrtss xmm9, xmm9
+	vbroadcastss xmm9, xmm9
+	mulps xmm9, xmm11
+
+lineRenderLoopHead:
+		addps xmm8, xmm9
+		cvttps2dq xmm10, xmm8
+		movd ecx, xmm10
+		pextrd eax, xmm10, 1
+		xor edx, edx
+		mul ebx
+		add eax, ecx
+		cmp eax, maxCharValue
+		setg dl
+		cmp eax, 0
+		setl r8b
+		or dl, r8b
+		test dl, 1
+		jnz noRender
+		add rax, charBuffer
+		mov byte ptr [rax], 'o'
+	noRender:
+		movd eax, xmm10
+		cmp eax, 0
+		setl dl
+		pextrd eax, xmm10, 1
+		cmp eax, 0
+		setl r8b
+		or dl, r8b
+		test dl, 1
+		jnz doneRender
+		psubd xmm10, xmm7
+		movd eax, xmm10
+		pextrd ecx, xmm10, 1
+		add eax, ecx
+		cmp eax, 1
+		jg lineRenderLoopHead
+		
+doneRender:
+endm
+
 ;;renders a cube at some location with some scale
 ;;ymm0: scale, ymm1: positionX, ymm2: positionY, ymm3: positionZ
 ;scale: ymmword
@@ -220,10 +271,8 @@ RenderCubeLocScale proc
 	
 	xVertexLoc equ rbp - sizeof ymmword
 	yVertexLoc equ rbp - sizeof ymmword * 2
-	xFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword
-	yFinalLoc equ rbp - sizeof ymmword * 2 - sizeof ymmword * 2
-	shiftedXLoc equ yFinalLoc - sizeof ymmword
-	shiftedYLoc equ yFinalLoc - sizeof ymmword * 2
+	shiftedXLoc equ yVertexLoc - sizeof ymmword
+	shiftedYLoc equ yVertexLoc - sizeof ymmword * 2
 
 	vmovups ymmword ptr [xVertexLoc], ymm4
 	vmovups ymmword ptr [yVertexLoc], ymm5
@@ -237,10 +286,8 @@ RenderCubeLocScale proc
 	movss real4 ptr [shiftedYLoc + last_real4_offset], xmm5
 	
 	;;TODO: try to change the movups from mem to xmm and visa-versa to movaps here and test if it works
-	movaps xmm0, xmm4
-	vhsubps xmm0, xmm0, xmmword ptr [xVertexLoc + sizeof xmmword];floating point dif in x
-	movaps xmm1, xmm5
-	vhsubps xmm1, xmm1, xmmword ptr [yVertexLoc + sizeof xmmword];floating point dif in y
+	vhsubps xmm0, xmm4, xmmword ptr [xVertexLoc + sizeof xmmword];floating point dif in x
+	vhsubps xmm1, xmm5, xmmword ptr [yVertexLoc + sizeof xmmword];floating point dif in y
 	movups xmm3, xmmword ptr [shiftedXLoc]
 	vhsubps xmm3, xmm3, xmmword ptr [shiftedXLoc + sizeof xmmword];final second point dif in x
 	movups xmm6, xmmword ptr [shiftedYLoc]
@@ -249,27 +296,60 @@ RenderCubeLocScale proc
 	push rbx
 	cvtss2si ebx, xmm2
 
-	LoadVerticalVertices1 xmm7, xmm4, xmm5;final single-precision floating point value pos
+	;RenderLine LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1
+	
+	LoadFirstVerticalVertices xmm7, xmm4, xmm5;final single-precision floating point value pos
+	pand xmm7, xmmword ptr [ABS_VALUE_MASK_F]
 	cvttps2dq xmm7, xmm7;final dword pos
-	LoadFirstVerticalVertices xmm8, xmm4, xmm5;initial pos
-	LoadFirstVerticalVertices xmm9, xmm0, xmm1;difference
+	LoadVerticalVertices1 xmm8, xmm4, xmm5;initial pos
+	LoadFirstVerticalVertices xmm9, xmm0, xmm1;first four differences
+	
+	movaps xmm11, xmm9
+	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
+	pand xmm9, xmmword ptr [ABS_VALUE_MASK_F]
+	rsqrtss xmm9, xmm9
+	vbroadcastss xmm9, xmm9
+	mulps xmm9, xmm11
+
 lineRenderLoopHead:
 		addps xmm8, xmm9
-		cvttps2dq xmm10, xmm8
+		movaps xmm10, xmm8
+		pand xmm10, xmmword ptr [ABS_VALUE_MASK_F]
+		cvttps2dq xmm10, xmm10
 		movd ecx, xmm10
 		pextrd eax, xmm10, 1
 		xor edx, edx
 		mul ebx
 		add eax, ecx
+		cmp eax, maxCharValue
+		setg dl
+		cmp eax, 0
+		setl r8b
+		or dl, r8b
+		test dl, 1
+		jnz noRender
 		add rax, charBuffer
-		mov byte ptr [rax], 'O'
-
+		mov byte ptr [rax], 'o'
+	noRender:
+		movd eax, xmm10
+		cmp eax, 0
+		setl dl
+		pextrd eax, xmm10, 1
+		cmp eax, 0
+		setl r8b
+		or dl, r8b
+		test dl, 1
+		jnz doneRender
 		psubd xmm10, xmm7
+
+		pand xmm10, xmmword ptr [ABS_VALUE_MASK_F]
 		movd eax, xmm10
 		pextrd ecx, xmm10, 1
 		add eax, ecx
 		cmp eax, 1
 		jg lineRenderLoopHead
+		
+doneRender:
 
 	pop rbx
 
@@ -279,10 +359,9 @@ lineRenderLoopHead:
 	;;; \/\/\/\/\/
 
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
-	vmulps ymm5, ymm5, ymm2
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
-	xor eax, eax
-	mov ax, word ptr [charBufferMaxVal + 4]
+	vmulps ymm5, ymm5, ymm2;it unsettles me that this works. it should be that you multiply by the packed singles *before* converting.
+	movzx eax, word ptr [charBufferMaxVal + 4]
 	movd xmm3, eax
 	vpbroadcastd ymm3, xmm3
 	vpcmpgtd ymm7, ymm4, ymm3
