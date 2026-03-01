@@ -139,6 +139,14 @@ LoadVerticalVertices3 macro xmmDst, xmmSrc1, xmmSrc2
 	insertps xmmDst, xmmSrc2, INSERT_3_TO_1
 endm
 
+;uses ymmword of stack
+LoadVerticalVerticesI macro xmmDst, ymmSrc1, ymmSrc2, i
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymmSrc1
+	movss xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i]
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymmSrc2
+	insertps xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i], INSERT_0_TO_1
+endm
+
 ;xmmInt is intermediate register that will be modified.
 AbsDwordVec macro xmmDst, xmmInt
 	vpsrad xmmInt, xmmDst, 31
@@ -146,11 +154,17 @@ AbsDwordVec macro xmmDst, xmmInt
 	psubd xmmDst, xmmInt
 endm
 
-RenderLine macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl
+LoadLinePts1 macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl
 	finalPosLoad xmm7, xmm4, xmm5;final single-precision floating point value pos
 	cvttps2dq xmm7, xmm7;final dword pos
 	initialPosLoad xmm8, xmm4, xmm5;initial pos
-	diffPtLoad xmm9, pointDiffX, pointDiffY;first four differences
+	diffPtLoad xmm9, pointDiffX, pointDiffY;difference
+
+	RenderLine lineRenderLHLbl, noRenderLbl
+endm
+
+
+RenderLine macro lineRenderLHLbl, noRenderLbl
 	
 	movaps xmm11, xmm9
 	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
@@ -192,7 +206,6 @@ lineRenderLHLbl:
 		add eax, ecx
 		cmp eax, 1
 		jg lineRenderLHLbl
-		
 endm
 
 ;;renders a cube at some location with some scale
@@ -275,6 +288,7 @@ RenderCubeLocScale proc
 
 	
 	ymmwordLoc equ rbp - sizeof ymmword
+	vertex2dLoc equ ymmwordLoc - sizeof ymmword
 
 	
 	;;TODO: try to change the movups from mem to xmm and visa-versa to movaps here and test if it works
@@ -282,21 +296,53 @@ RenderCubeLocScale proc
 	vhsubps xmm0, xmm4, xmmword ptr [ymmwordLoc + sizeof xmmword];floating point dif in x
 	vmovups ymmword ptr [ymmwordLoc], ymm5
 	vhsubps xmm1, xmm5, xmmword ptr [ymmwordLoc + sizeof xmmword];floating point dif in y
-	vpsllq ymm3, ymm4, sizeof real4 * bits_in_byte
-	vmovups ymmword ptr [ymmwordLoc], ymm3
+
 	last_real4_offset equ sizeof real4 * 7
-	movss real4 ptr [ymmwordLoc + last_real4_offset], xmm4
+
+	vpslldq ymm3, ymm4, sizeof real4
+	vmovups ymmword ptr [ymmwordLoc], ymm3
+	vmovups ymmword ptr [vertex2dLoc], ymm4
+	movss xmm11, real4 ptr [vertex2dLoc + sizeof real4 * 7]
+	movss real4 ptr [ymmwordLoc], xmm11
+
+	movss xmm11, real4 ptr [vertex2dLoc + sizeof real4 * 3]
+	movss real4 ptr [ymmwordLoc + sizeof real4 * 4], xmm11
+	vmovups ymm3, ymmword ptr [ymmwordLoc]
+
 	vhsubps xmm3, xmm3, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in x
-	vpsllq ymm6, ymm5, sizeof real4 * bits_in_byte
+
+	vpslldq ymm6, ymm5, sizeof real4
 	vmovups ymmword ptr [ymmwordLoc], ymm6
-	movss real4 ptr [ymmwordLoc + last_real4_offset], xmm5
+	vmovups ymmword ptr [vertex2dLoc], ymm5
+	movss xmm11, real4 ptr [vertex2dLoc + sizeof real4 * 7]
+	movss real4 ptr [ymmwordLoc], xmm11
+
+	movss xmm11, real4 ptr [vertex2dLoc + sizeof real4 * 3]
+	movss real4 ptr [ymmwordLoc + sizeof real4 * 4], xmm11
+	vmovups ymm6, ymmword ptr [ymmwordLoc]
+
 	vhsubps xmm6, xmm6, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in y
 
 	push rbx
 	cvtss2si ebx, xmm2
 
-	RenderLine LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1
-	RenderLine LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2
+	LoadLinePts1 LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1
+	LoadLinePts1 LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2
+	
+	LoadVerticalVerticesi xmm7, ymm4, ymm5, 4;final
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesi xmm8, ymm4, ymm5, 5;initial
+	LoadVerticalVertices2 xmm9, xmm0, xmm1;difference
+	RenderLine lh4, nr4
+	
+	LoadVerticalVerticesi xmm7, ymm4, ymm5, 6;final
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesi xmm8, ymm4, ymm5, 7;initial
+	LoadVerticalVertices3 xmm9, xmm0, xmm1;difference
+	RenderLine lh5, nr5
+	
+	LoadLinePts1 LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm3, xmm6, lh6, nr6
+
 	
 	pop rbx
 
