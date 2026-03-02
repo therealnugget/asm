@@ -154,17 +154,17 @@ AbsDwordVec macro xmmDst, xmmInt
 	psubd xmmDst, xmmInt
 endm
 
-LoadLinePts1 macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl
+LoadLinePts macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	finalPosLoad xmm7, xmm4, xmm5;final single-precision floating point value pos
 	cvttps2dq xmm7, xmm7;final dword pos
 	initialPosLoad xmm8, xmm4, xmm5;initial pos
 	diffPtLoad xmm9, pointDiffX, pointDiffY;difference
 
-	RenderLine lineRenderLHLbl, noRenderLbl
+	RenderLine lineRenderLHLbl, noRenderLbl, doneRenderLbl
 endm
 
 
-RenderLine macro lineRenderLHLbl, noRenderLbl
+RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	
 	movaps xmm11, xmm9
 	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
@@ -172,11 +172,23 @@ RenderLine macro lineRenderLHLbl, noRenderLbl
 	rsqrtss xmm9, xmm9
 	vbroadcastss xmm9, xmm9
 	mulps xmm9, xmm11
+	
+	cvttps2dq xmm10, xmm8
+	movd ecx, xmm10
+	movd edx, xmm7
+	pextrd eax, xmm10, 1
+	pextrd r8d, xmm7, 1
+	cmp ecx, edx
+	sete cl
+	cmp eax, r8d
+	sete al
+	and al, cl
+	test al, 1
+	jnz doneRenderLbl
 
 lineRenderLHLbl:
 		addps xmm8, xmm9
-		movaps xmm10, xmm8
-		cvttps2dq xmm10, xmm10
+		cvttps2dq xmm10, xmm8
 		movd ecx, xmm10
 		pextrd eax, xmm10, 1
 		cmp ecx, 0
@@ -206,6 +218,8 @@ lineRenderLHLbl:
 		add eax, ecx
 		cmp eax, 1
 		jg lineRenderLHLbl
+
+	doneRenderLbl:
 endm
 
 ;;renders a cube at some location with some scale
@@ -326,22 +340,26 @@ RenderCubeLocScale proc
 	push rbx
 	cvtss2si ebx, xmm2
 
-	LoadLinePts1 LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1
-	LoadLinePts1 LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2
+	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1
+	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2
 	
 	LoadVerticalVerticesi xmm7, ymm4, ymm5, 4;final
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesi xmm8, ymm4, ymm5, 5;initial
 	LoadVerticalVertices2 xmm9, xmm0, xmm1;difference
-	RenderLine lh4, nr4
+	RenderLine lh4, nr4, dr4
 	
 	LoadVerticalVerticesi xmm7, ymm4, ymm5, 6;final
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesi xmm8, ymm4, ymm5, 7;initial
 	LoadVerticalVertices3 xmm9, xmm0, xmm1;difference
-	RenderLine lh5, nr5
+	RenderLine lh5, nr5, dr5
 	
-	LoadLinePts1 LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm3, xmm6, lh6, nr6
+	;LoadVerticalVerticesi xmm7, ymm4, ymm5, 7;initial
+	;cvttps2dq xmm7, xmm7
+	;LoadFirstVerticalVertices xmm8, xmm4, xmm5;final
+	;LoadFirstVerticalVertices xmm9, xmm3, xmm6;difference
+	;RenderLine lh6, nr6, dr6
 
 	
 	pop rbx
