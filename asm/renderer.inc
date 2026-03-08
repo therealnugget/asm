@@ -152,7 +152,7 @@ LoadVerticalVerticesI macro xmmDst, ymmSrc1, ymmSrc2, i
 	insertps xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i], INSERT_0_TO_1
 endm
 
-;xmmInt is intermediate register that will be modified.
+;xmmInt is intermediate register that will be modified. only xmmDst and xmmInt are used.
 AbsDwordVec macro xmmDst, xmmInt
 	vpsrad xmmInt, xmmDst, 31
 	pxor xmmDst, xmmInt
@@ -184,27 +184,11 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	pextrd eax, xmm10, 1
 	pextrd r8d, xmm7, 1
 	cmp ecx, edx
-	sete r9b
+	sete cl
 	cmp eax, r8d
-	sete r10b
-	and r10b, r9b
-	cmp ecx, FLT_MIN_I
-	setle cl
-	cmp edx, FLT_MIN_I
-	setle dl
-	and cl, dl
-	cmp eax, FLT_MIN_I
-	setle al
-	cmp r8d, FLT_MIN_I
-	setle r8b
-	and al, r8b
-	or al, cl
+	sete al
+	and al, cl
 	test al, 1
-	jz temp
-	call DebugBreak
-temp:
-	or r10b, al
-	test r10b, 1
 	jnz doneRenderLbl
 
 lineRenderLHLbl:
@@ -212,11 +196,45 @@ lineRenderLHLbl:
 		cvttps2dq xmm10, xmm8
 		movd ecx, xmm10
 		pextrd eax, xmm10, 1
+		movd r9d, xmm7
+		pextrd r10d, xmm7, 1
+
+		;TODO: add this checking in the initial stage
 		cmp ecx, 0
-		setl dl
+		setle dl
+		movzx r11d, word ptr [charBufferMaxVal + sizeof word * 2]
+		cmp ecx, r11d
+		setg r12b
+		or r12b, dl
+
+		cmp r9d, 0
+		setle r13b
+		cmp r9d, r11d
+		setg r14b
+		or r13b, r14b
+
+		movzx r11d, word ptr [charBufferMaxVal + sizeof word * 3]
+		cmp r10d, 0
+		setle r14b
+		cmp r10d, r11d
+		setg r15b
+		or r14b, r15b
+
 		cmp eax, 0
-		setl r8b
+		setle r8b
 		or dl, r8b
+		cmp eax, r11d
+		setg r15b
+		or r8b, r15b
+
+		and r12b, r13b
+		and r14b, r8b
+		or r12b, r14b
+		test r12b, 1
+		jnz doneRenderLbl
+
+
+
 		cmp cx, word ptr [charBufferMaxVal + sizeof word * 2]
 		setg r8b
 		or dl, r8b
@@ -302,12 +320,8 @@ RenderCubeLocScale proc
 	vbroadcastss ymm3, xmm1
 
 	vpxor ymm7, ymm7, ymm7
-	movd eax, xmm7
-	cmp eax, -1
-	jne temp2
-
-temp2:
 	vcmpps ymm7, ymm6, ymm7, MORE_THAN_VEC_CMP_PS; z more than zero ==> not visible to player
+
 	;;vpxor ymm8, ymm8, ymmword ptr [NanVec]
 	;;vpand ymm4, ymm4, ymm8
 	;;vpand ymm5, ymm5, ymm8
@@ -364,6 +378,10 @@ temp2:
 	vhsubps xmm6, xmm6, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in y
 
 	push rbx
+	push r12
+	push r13
+	push r14
+	push r15
 	cvtss2si ebx, xmm2
 
 	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1, t2
@@ -405,6 +423,10 @@ temp2:
 	LoadVerticalVertices3 xmm9, xmm3, xmm6;difference
 	RenderLine lh9, nr9, dontRender9, t9
 	
+	pop r15
+	pop r14
+	pop r13
+	pop r12
 	pop rbx
 
 	;;;uses: ymm2, ymm4, ymm5
