@@ -3,7 +3,6 @@ renderer equ 1
 .data
 SHUFFLE_ODD equ 136
 SHUFFLE_EVEN equ 221
-MORE_THAN_VEC_CMP_PS equ 5
 FLT_MIN_I equ -26172378
 
 EXTRACT_LOW_WORD equ 0
@@ -183,6 +182,40 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	movd edx, xmm7
 	pextrd eax, xmm10, 1
 	pextrd r8d, xmm7, 1
+
+	;pxor xmm11, xmm11
+	;vcmpps xmm11, xmm9, xmm11, LESS_EQU_VEC_CMP
+	;movd r9d, xmm11;r9b = xmm11.x == -ve
+	;pextrd r10d, xmm11, 1;r10b = xmm11.y == -ve
+	;
+	;pxor xmm11, xmm11
+	;vcmpps xmm11, xmm9, xmm11, GREATER_VEC_CMP
+	;movd r11d, xmm11;r11b = xmm11.x == +ve
+	;pextrd r12d, xmm11, 1;r12b = xmm11.y == +ve
+
+
+	cmp ecx, 0
+	setle r13b
+	and r13b, r9b
+	
+	cmp eax, 0
+	setle r15b
+	and r15b, r10b
+	or r15b, r13b
+
+	movzx r14d, word ptr [charBufferMaxVal + sizeof word * 2]
+	cmp ecx, r14d
+	setg r13b
+	and r13b, r11b
+	or r13b, r15b
+
+	movzx r14d, word ptr [charBufferMaxVal + sizeof word * 3]
+	cmp eax, r14d
+	setg r15b
+	and r15b, r12b
+	or r15b, r13b
+
+	
 	cmp ecx, edx
 	sete cl
 	cmp eax, r8d
@@ -192,55 +225,49 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	jnz doneRenderLbl
 
 lineRenderLHLbl:
+		movaps xmm10, xmm8
 		addps xmm8, xmm9
-		cvttps2dq xmm10, xmm8
-		movd ecx, xmm10
-		pextrd eax, xmm10, 1
-		movd r9d, xmm7
-		pextrd r10d, xmm7, 1
+		movd eax, xmm10
+		pextrd ecx, xmm10, 1
+		movd r8d, xmm8
+		pextrd r9d, xmm8, 1
 
-		;TODO: add this checking in the initial stage
-		cmp ecx, 0
-		setle dl
-		movzx r11d, word ptr [charBufferMaxVal + sizeof word * 2]
-		cmp ecx, r11d
-		setg r12b
-		or r12b, dl
-
-		cmp r9d, 0
-		setle r13b
-		cmp r9d, r11d
-		setg r14b
-		or r13b, r14b
-
-		movzx r11d, word ptr [charBufferMaxVal + sizeof word * 3]
-		cmp r10d, 0
-		setle r14b
-		cmp r10d, r11d
-		setg r15b
-		or r14b, r15b
-
-		cmp eax, 0
-		setle r8b
-		or dl, r8b
-		cmp eax, r11d
-		setg r15b
-		or r8b, r15b
-
-		and r12b, r13b
-		and r14b, r8b
-		or r12b, r14b
-		test r12b, 1
+		cmp eax, r8d
+		sete r9b
+		vcmpps xmm11, xmm9, zeroVec, NOT_EQU_VEC_CMP
+		movd ecx, xmm11
+		and r9b, cl
+		
+		cmp ecx, r9d
+		sete r10b
+		pextrd r11d, xmm11, 1
+		and r10b, r11b
+		or r10b, r9b
+		test r10b, 1
 		jnz doneRenderLbl
 
 
+		cvttps2dq xmm10, xmm8
+		movd ecx, xmm10
+		pextrd eax, xmm10, 1
 
-		cmp cx, word ptr [charBufferMaxVal + sizeof word * 2]
+		cmp ecx, 0
+		setl dl
+
+		cmp eax, 0
+		setl r8b
+		or dl, r8b
+
+		movzx r9d, word ptr [charBufferMaxVal + sizeof word * 2]
+		cmp ecx, r9d
 		setg r8b
 		or dl, r8b
-		cmp ax, word ptr [charBufferMaxVal + sizeof word * 3]
+
+		movzx r9d, word ptr [charBufferMaxVal + sizeof word * 3]
+		cmp eax, r9d
 		setg r8b
 		or dl, r8b
+
 		test dl, 1
 		jnz noRenderLbl
 		xor edx, edx
@@ -320,7 +347,7 @@ RenderCubeLocScale proc
 	vbroadcastss ymm3, xmm1
 
 	vpxor ymm7, ymm7, ymm7
-	vcmpps ymm7, ymm6, ymm7, MORE_THAN_VEC_CMP_PS; z more than zero ==> not visible to player
+	vcmpps ymm7, ymm6, ymm7, GREATER_VEC_CMP; z more than zero ==> not visible to player
 
 	;;vpxor ymm8, ymm8, ymmword ptr [NanVec]
 	;;vpand ymm4, ymm4, ymm8

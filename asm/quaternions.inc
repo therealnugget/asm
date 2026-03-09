@@ -15,8 +15,9 @@ INSERT_W_TO_W equ 0f0h
 INSERT_X_TO_W equ 30h
 NEQU_VEC_CMP_SS equ 3h
 EQU_VEC_CMP_SS equ 0h
-LESS_EQU_VEC_CMP_SS equ 2h
-GREATER_VEC_CMP_SS equ 6h
+LESS_EQU_VEC_CMP equ 2h
+GREATER_VEC_CMP equ 6h
+NOT_EQU_VEC_CMP equ 4h
 PI_ON_4 equ 63
 
 SingleDefVec negOneVec, -1.0
@@ -122,7 +123,7 @@ QuatLength endp
 ;normalizes quaternion in xmm0
 QuatNormalize proc
 	dpps xmm0, xmm0, QUATERNION_DOT_MASK
-	vcmpss xmm2, xmm0, zero, GREATER_VEC_CMP_SS
+	vcmpss xmm2, xmm0, zero, GREATER_VEC_CMP
 	vbroadcastss xmm2, xmm2
 	rsqrtss xmm1, xmm0
 	vbroadcastss xmm1, xmm1
@@ -259,7 +260,7 @@ QuatAxis proc
 	mulss xmm1, negOne
 	addss xmm1, one
 	rsqrtss xmm2, xmm1
-	cmpss xmm1, zero, GREATER_VEC_CMP_SS
+	cmpss xmm1, zero, GREATER_VEC_CMP
 	vbroadcastss xmm1, xmm1
 	vbroadcastss xmm2, xmm2
 	mulps xmm0, xmm2;orig q.xyz / sqrt(q.w)
@@ -271,7 +272,7 @@ QuatAxis endp
 VecNormalize proc
 	movaps xmm1, xmm0
 	VectorDot xmm0, xmm0
-	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP_SS
+	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP
 	vbroadcastss xmm3, xmm3
 	rsqrtss xmm0, xmm0
 	pand xmm0, xmm3
