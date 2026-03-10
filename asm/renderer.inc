@@ -183,15 +183,15 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	pextrd eax, xmm10, 1
 	pextrd r8d, xmm7, 1
 
-	;pxor xmm11, xmm11
-	;vcmpps xmm11, xmm9, xmm11, LESS_EQU_VEC_CMP
-	;movd r9d, xmm11;r9b = xmm11.x == -ve
-	;pextrd r10d, xmm11, 1;r10b = xmm11.y == -ve
-	;
-	;pxor xmm11, xmm11
-	;vcmpps xmm11, xmm9, xmm11, GREATER_VEC_CMP
-	;movd r11d, xmm11;r11b = xmm11.x == +ve
-	;pextrd r12d, xmm11, 1;r12b = xmm11.y == +ve
+	pxor xmm11, xmm11
+	vcmpps xmm11, xmm9, xmm11, LESS_EQU_VEC_CMP
+	movd r9d, xmm11;r9b = xmm11.x == -ve
+	pextrd r10d, xmm11, 1;r10b = xmm11.y == -ve
+	
+	pxor xmm11, xmm11
+	vcmpps xmm11, xmm11, xmm9, LESS_EQU_VEC_CMP
+	movd r11d, xmm11;r11b = xmm11.x == +ve
+	pextrd r12d, xmm11, 1;r12b = xmm11.y == +ve
 
 
 	cmp ecx, 0
@@ -221,6 +221,7 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	cmp eax, r8d
 	sete al
 	and al, cl
+	or al, r15b
 	test al, 1
 	jnz doneRenderLbl
 
@@ -235,8 +236,8 @@ lineRenderLHLbl:
 		cmp eax, r8d
 		sete r9b
 		vcmpps xmm11, xmm9, zeroVec, NOT_EQU_VEC_CMP
-		movd ecx, xmm11
-		and r9b, cl
+		movd r10d, xmm11
+		and r9b, r10b
 		
 		cmp ecx, r9d
 		sete r10b
@@ -307,24 +308,40 @@ RenderCubeLocScale proc
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm1
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm2
 	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm3
-	vmovups ymmword ptr [rbp - sizeof ymmword * 5], ymm4
-	vmovups ymmword ptr [rbp - sizeof ymmword * 6], ymm5
-	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm6
+	vmovups ymmword ptr [rbp - sizeof ymmword * 5], ymm4;;;x
+	vmovups ymmword ptr [rbp - sizeof ymmword * 6], ymm5;;;y
+	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm6;;;z
 
 	rotated_points_loc equ rbp - sizeof ymmword * 7
+
+	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm4
+	vhaddps ymm4, ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword]
+	haddps xmm4, xmm4
+	haddps xmm4, xmm4
+
+	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm5
+	vhaddps ymm5, ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword]
+	haddps xmm5, xmm5
+	haddps xmm5, xmm5
+
+	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm4
+	vhaddps ymm4, ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword]
+	haddps xmm4, xmm4
+	haddps xmm4, xmm4
+
 
 	RotateVertices rotated_points_loc, sizeof real4 * 0
 	RotateVertices rotated_points_loc, sizeof real4 * 1
 	RotateVertices rotated_points_loc, sizeof real4 * 2
 	RotateVertices rotated_points_loc, sizeof real4 * 3
-
+	
 	RotateVertices rotated_points_loc, sizeof real4 * 4
 	RotateVertices rotated_points_loc, sizeof real4 * 5
 	RotateVertices rotated_points_loc, sizeof real4 * 6
 	RotateVertices rotated_points_loc, sizeof real4 * 7
 	
 	RestoreVertices
-
+	
 	vmovups ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword * 1]
 	vmovups ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword * 2]
 	vmovups ymm6, ymmword ptr [rotated_points_loc - sizeof ymmword * 3]
