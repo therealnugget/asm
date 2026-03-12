@@ -26,9 +26,6 @@ INSERT_3_TO_0 equ 0c0h
 INSERT_3_TO_1 equ 0d0h
 INSERT_3_TO_2 equ 0e0h
 
-;index buffer
-;1
-
 ;default cube veritces
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
@@ -216,10 +213,20 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
 	or r15b, r13b
 
 	
-	cmp ecx, edx
-	sete cl
-	cmp eax, r8d
-	sete al
+	sub ecx, edx
+	mov r9d, ecx
+	sar r9d, 31
+	xor ecx, r9d
+	sub ecx, r9d
+	cmp ecx, 1
+	setle cl
+	sub eax, r8d
+	mov r9d, eax
+	sar r9d, 31
+	xor eax, r9d
+	sub eax, r9d
+	cmp eax, 1
+	setle al
 	and al, cl
 	or al, r15b
 	test al, 1
@@ -234,16 +241,16 @@ lineRenderLHLbl:
 		pextrd r9d, xmm8, 1
 
 		cmp eax, r8d
-		sete r9b
+		sete r12b
 		vcmpps xmm11, xmm9, zeroVec, NOT_EQU_VEC_CMP
 		movd r10d, xmm11
-		and r9b, r10b
+		and r12b, r10b
 		
 		cmp ecx, r9d
 		sete r10b
 		pextrd r11d, xmm11, 1
 		and r10b, r11b
-		or r10b, r9b
+		or r10b, r12b
 		test r10b, 1
 		jnz doneRenderLbl
 
@@ -283,10 +290,55 @@ lineRenderLHLbl:
 		movd eax, xmm10
 		pextrd ecx, xmm10, 1
 		add eax, ecx
-		cmp eax, 1
+		cmp eax, 2
 		jg lineRenderLHLbl
 
 	doneRenderLbl:
+endm
+
+
+
+;initial:
+;0, 1, 2, 3, 4, 5, 6, 7
+
+;desired:
+;0, 4, 1, 5, 2, 6, 3, 7
+
+;transformations:
+;0, 4, 2, 3, 1, 5, 6, 7
+
+;0, 4, 1, 3, 2, 5, 6, 7
+
+;0, 4, 1, 6, 2, 5, 3, 7
+
+;0, 4, 1, 5, 2, 6, 3, 7
+
+;|  |  |  |  |  |  |  |
+;|  |  |  |  |  |  |  |
+;|  |  |  |  |  |  |  |
+;\/ \/ \/ \/ \/ \/ \/ \/
+
+;TODO: use more intermediate registers so that this can be done in less instructions
+InterleaveVertices macro loc
+	movss xmm3, real4 ptr [loc + sizeof real4 * 1]
+	movss xmm11, real4 ptr [loc + sizeof real4 * 4]
+	movss real4 ptr [loc + sizeof real4 * 4], xmm3
+	movss real4 ptr [loc + sizeof real4 * 1], xmm11
+
+	movss xmm3, real4 ptr [loc + sizeof real4 * 2]
+	movss xmm11, real4 ptr [loc + sizeof real4 * 4]
+	movss real4 ptr [loc + sizeof real4 * 4], xmm3
+	movss real4 ptr [loc + sizeof real4 * 2], xmm11
+
+	movss xmm3, real4 ptr [loc + sizeof real4 * 3]
+	movss xmm11, real4 ptr [loc + sizeof real4 * 6]
+	movss real4 ptr [loc + sizeof real4 * 6], xmm3
+	movss real4 ptr [loc + sizeof real4 * 3], xmm11
+
+	movss xmm3, real4 ptr [loc + sizeof real4 * 3]
+	movss xmm11, real4 ptr [loc + sizeof real4 * 5]
+	movss real4 ptr [loc + sizeof real4 * 5], xmm3
+	movss real4 ptr [loc + sizeof real4 * 3], xmm11
 endm
 
 ;;renders a cube at some location with some scale
@@ -388,8 +440,21 @@ RenderCubeLocScale proc
 	ymmwordLoc equ rbp - sizeof ymmword
 	vertex2dLoc equ ymmwordLoc - sizeof ymmword
 
+	xVertLoc equ rotated_points_loc - sizeof ymmword * 1
+	yVertLoc equ rotated_points_loc - sizeof ymmword * 2
+
+	vmovups ymmword ptr [xVertLoc], ymm4
+	vmovups ymmword ptr [yVertLoc], ymm5
+
+	InterleaveVertices xVertLoc
+	InterleaveVertices yVertLoc
+
+	movups xmm12, xmmword ptr [xVertLoc]
+	movups xmm13, xmmword ptr [yVertLoc]
 	
-	;;TODO: try to change the movups from mem to xmm and visa-versa to movaps here and test if it works
+	vhsubps xmm14, xmm12, xmmword ptr [xVertLoc + sizeof xmmword]
+	vhsubps xmm15, xmm13, xmmword ptr [yVertLoc + sizeof xmmword]
+	
 	vmovups ymmword ptr [ymmwordLoc], ymm4
 	vhsubps xmm0, xmm4, xmmword ptr [ymmwordLoc + sizeof xmmword];floating point dif in x
 	vmovups ymmword ptr [ymmwordLoc], ymm5
@@ -397,6 +462,7 @@ RenderCubeLocScale proc
 
 	last_real4_offset equ sizeof real4 * 7
 
+	;;TODO: don't use vertex2dLoc; use xVertLoc & yVertLoc instead.
 	vpslldq ymm3, ymm4, sizeof real4
 	vmovups ymmword ptr [ymmwordLoc], ymm3
 	vmovups ymmword ptr [vertex2dLoc], ymm4
@@ -431,15 +497,15 @@ RenderCubeLocScale proc
 	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1, t2
 	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2, t3
 	
-	LoadVerticalVerticesi xmm7, ymm4, ymm5, 4;final
+	LoadVerticalVerticesI xmm7, ymm4, ymm5, 4;final
 	cvttps2dq xmm7, xmm7
-	LoadVerticalVerticesi xmm8, ymm4, ymm5, 5;initial
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 5;initial
 	LoadVerticalVertices2 xmm9, xmm0, xmm1;difference
 	RenderLine lh4, nr4, dr4, t4
 	
-	LoadVerticalVerticesi xmm7, ymm4, ymm5, 6;final
+	LoadVerticalVerticesI xmm7, ymm4, ymm5, 6;final
 	cvttps2dq xmm7, xmm7
-	LoadVerticalVerticesi xmm8, ymm4, ymm5, 7;initial
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 7;initial
 	LoadVerticalVertices3 xmm9, xmm0, xmm1;difference
 	RenderLine lh5, nr5, dr5, t5
 	
@@ -455,17 +521,41 @@ RenderCubeLocScale proc
 	LoadVerticalVertices1 xmm9, xmm3, xmm6;difference
 	RenderLine lh7, nr7, dontRender7, t7
 	
-	LoadVerticalVerticesi xmm7, ymm4, ymm5, 7;initial
+	LoadVerticalVerticesI xmm7, ymm4, ymm5, 7;initial
 	cvttps2dq xmm7, xmm7
-	LoadVerticalVerticesi xmm8, ymm4, ymm5, 4;final
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 4;final
 	LoadVerticalVertices2 xmm9, xmm3, xmm6;difference
 	RenderLine lh8, nr8, dontRender8, t8
 	
-	LoadVerticalVerticesi xmm7, ymm4, ymm5, 5;initial
+	LoadVerticalVerticesI xmm7, ymm4, ymm5, 5;initial
 	cvttps2dq xmm7, xmm7
-	LoadVerticalVerticesi xmm8, ymm4, ymm5, 6;final
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 6;final
 	LoadVerticalVertices3 xmm9, xmm3, xmm6;difference
 	RenderLine lh9, nr9, dontRender9, t9
+	
+	LoadFirstVerticalVertices xmm7, xmm4, xmm5;initial
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 4;final
+	LoadFirstVerticalVertices xmm9, xmm14, xmm15;difference
+	RenderLine lh10, nr10, dontRender10, t10
+	
+	LoadVerticalVertices1 xmm7, xmm4, xmm5;initial
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 5;final
+	LoadVerticalVertices1 xmm9, xmm14, xmm15;difference
+	RenderLine lh11, nr11, dontRender11, t11
+	
+	LoadVerticalVertices2 xmm7, xmm4, xmm5;initial
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 6;final
+	LoadVerticalVertices2 xmm9, xmm14, xmm15;difference
+	RenderLine lh12, nr12, dontRender12, t12
+	
+	LoadVerticalVertices3 xmm7, xmm4, xmm5;initial
+	cvttps2dq xmm7, xmm7
+	LoadVerticalVerticesI xmm8, ymm4, ymm5, 7;final
+	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
+	RenderLine lh13, nr13, dontRender13, t13
 	
 	pop r15
 	pop r14
