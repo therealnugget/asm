@@ -34,6 +34,7 @@ SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
 float_min real4 -26172378.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
+PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
 rotationX db 0
 rotationY db 0
 .code
@@ -155,18 +156,25 @@ AbsDwordVec macro xmmDst, xmmInt
 	psubd xmmDst, xmmInt
 endm
 
-LoadLinePts macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
+LoadLinePts macro finalPosLoad, initialPosLoad, diffPtLoad, pointDiffX, pointDiffY, lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	finalPosLoad xmm7, xmm4, xmm5;final single-precision floating point value pos
 	cvttps2dq xmm7, xmm7;final dword pos
 	initialPosLoad xmm8, xmm4, xmm5;initial pos
 	diffPtLoad xmm9, pointDiffX, pointDiffY;difference
 
-	RenderLine lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
+	RenderLine lineRenderLHLbl, noRenderLbl, doneRenderLbl
 endm
 
 
-RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl, temp
+RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	
+	vcmpss xmm11, xmm9, PosNanVec, EQU_VEC_CMP
+	movd eax, xmm11
+	pextrd ecx, xmm11, 1
+	and al, cl
+	test al, 1
+	jnz doneRenderLbl
+
 	movaps xmm11, xmm9
 	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
 	pand xmm9, xmmword ptr [ABS_VALUE_MASK_F]
@@ -366,21 +374,6 @@ RenderCubeLocScale proc
 
 	rotated_points_loc equ rbp - sizeof ymmword * 7
 
-	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm4
-	vhaddps ymm4, ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword]
-	haddps xmm4, xmm4
-	haddps xmm4, xmm4
-
-	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm5
-	vhaddps ymm5, ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword]
-	haddps xmm5, xmm5
-	haddps xmm5, xmm5
-
-	vmovups ymmword ptr [rotated_points_loc - sizeof ymmword], ymm4
-	vhaddps ymm4, ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword]
-	haddps xmm4, xmm4
-	haddps xmm4, xmm4
-
 
 	RotateVertices rotated_points_loc, sizeof real4 * 0
 	RotateVertices rotated_points_loc, sizeof real4 * 1
@@ -494,68 +487,68 @@ RenderCubeLocScale proc
 	push r15
 	cvtss2si ebx, xmm2
 
-	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1, t2
-	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2, t3
+	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1
+	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2
 	
 	LoadVerticalVerticesI xmm7, ymm4, ymm5, 4;final
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 5;initial
 	LoadVerticalVertices2 xmm9, xmm0, xmm1;difference
-	RenderLine lh4, nr4, dr4, t4
+	RenderLine lh4, nr4, dr4
 	
 	LoadVerticalVerticesI xmm7, ymm4, ymm5, 6;final
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 7;initial
 	LoadVerticalVertices3 xmm9, xmm0, xmm1;difference
-	RenderLine lh5, nr5, dr5, t5
+	RenderLine lh5, nr5, dr5
 	
 	LoadVerticalVertices3 xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadFirstVerticalVertices xmm8, xmm4, xmm5;final
 	LoadFirstVerticalVertices xmm9, xmm3, xmm6;difference
-	RenderLine lh6, nr6, dontRender6, t6
+	RenderLine lh6, nr6, dontRender6
 	
 	LoadVerticalVertices1 xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVertices2 xmm8, xmm4, xmm5;final
 	LoadVerticalVertices1 xmm9, xmm3, xmm6;difference
-	RenderLine lh7, nr7, dontRender7, t7
+	RenderLine lh7, nr7, dontRender7
 	
 	LoadVerticalVerticesI xmm7, ymm4, ymm5, 7;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 4;final
 	LoadVerticalVertices2 xmm9, xmm3, xmm6;difference
-	RenderLine lh8, nr8, dontRender8, t8
+	RenderLine lh8, nr8, dontRender8
 	
 	LoadVerticalVerticesI xmm7, ymm4, ymm5, 5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 6;final
 	LoadVerticalVertices3 xmm9, xmm3, xmm6;difference
-	RenderLine lh9, nr9, dontRender9, t9
+	RenderLine lh9, nr9, dontRender9
 	
 	LoadFirstVerticalVertices xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 4;final
 	LoadFirstVerticalVertices xmm9, xmm14, xmm15;difference
-	RenderLine lh10, nr10, dontRender10, t10
+	RenderLine lh10, nr10, dontRender10
 	
 	LoadVerticalVertices1 xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 5;final
 	LoadVerticalVertices1 xmm9, xmm14, xmm15;difference
-	RenderLine lh11, nr11, dontRender11, t11
+	RenderLine lh11, nr11, dontRender11
 	
 	LoadVerticalVertices2 xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 6;final
 	LoadVerticalVertices2 xmm9, xmm14, xmm15;difference
-	RenderLine lh12, nr12, dontRender12, t12
+	RenderLine lh12, nr12, dontRender12
 	
 	LoadVerticalVertices3 xmm7, xmm4, xmm5;initial
 	cvttps2dq xmm7, xmm7
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 7;final
 	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
-	RenderLine lh13, nr13, dontRender13, t13
+	RenderLine lh13, nr13, dontRender13
 	
 	pop r15
 	pop r14
