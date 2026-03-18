@@ -85,15 +85,18 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec squarePositionX, 0.0
 SingleDefVec squarePositionY, 0.0
 SingleDefVec squarePositionZ, -5.0
-SingleDefVec squarePositionRotXX, 0.0
-SingleDefVec squarePositionRotXY, 0.0
-SingleDefVec squarePositionRotXZ, 0.0
-SingleDefVec squarePositionRotYX, 0.0
-SingleDefVec squarePositionRotYY, 0.0
-SingleDefVec squarePositionRotYZ, 0.0
 moveSpeed real4 0.1
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
+;the rotation around the centre of the cube
+AbsoluteRotation real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
+real4 0.0, 0.0, 0.0, 1.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
 isRotX db ?

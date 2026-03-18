@@ -35,6 +35,7 @@ SingledefVec zeroVec, 0.0
 float_min real4 -26172378.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
+NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
 .code
@@ -56,7 +57,7 @@ ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4];now x vertex is in xmm1, y vertex is in xmm1 + sizeof real4, and z vertex is in xmm1 + sizeof real4 * 2, last real4 part is dummy memory.
 endm
 
-RotateVertices macro STORE_LOCATION, VERTEX_OFFSET
+RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 
 	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
 	
@@ -64,23 +65,30 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET
 	movups xmm0, xmmword ptr [XAxis]
 	call QuatAngleAxis
 	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
-
+	
 	mov al, rotationY
 	movups xmm0, xmmword ptr [YAxis]
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
 	call QuatMult
+	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
+	movups xmm1, xmmword ptr [AbsoluteRotation + VERTEX_OFFSET_INDEX * sizeof xmmword]
 
-	ConvertHorizonPtToVert MAX_RET_LOC, VERTEX_OFFSET
+	call QuatMult
+	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
+	movups xmmword ptr [AbsoluteRotation + VERTEX_OFFSET_INDEX * sizeof xmmword], xmm1
+	call QuatMult
+
+	ConvertHorizonPtToVert MAX_RET_LOC, VERTEX_OFFSET_INDEX * sizeof real4
 
 	call QuatMultVec
 	vmovups ymmword ptr [rsp], ymm0
 	mov eax, dword ptr [rsp + sizeof real4 * 0]
-	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 1], eax
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET_INDEX * sizeof real4 - sizeof ymmword * 1], eax
 	mov eax, dword ptr [rsp + sizeof real4 * 1]
-	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 2], eax
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET_INDEX * sizeof real4 - sizeof ymmword * 2], eax
 	mov eax, dword ptr [rsp + sizeof real4 * 2]
-	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET - sizeof ymmword * 3], eax
+	mov dword ptr [STORE_LOCATION + VERTEX_OFFSET_INDEX * sizeof real4 - sizeof ymmword * 3], eax
 endm
 
 RestoreDefaultPoints macro
@@ -169,6 +177,8 @@ endm
 RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	
 	vcmpss xmm11, xmm9, PosNanVec, EQU_VEC_CMP
+	vcmpss xmm10, xmm9, NegNanVec, EQU_VEC_CMP
+	por xmm11, xmm10
 	movd eax, xmm11
 	pextrd ecx, xmm11, 1
 	and al, cl
@@ -374,16 +384,15 @@ RenderCubeLocScale proc
 
 	rotated_points_loc equ rbp - sizeof ymmword * 7
 
-
-	RotateVertices rotated_points_loc, sizeof real4 * 0
-	RotateVertices rotated_points_loc, sizeof real4 * 1
-	RotateVertices rotated_points_loc, sizeof real4 * 2
-	RotateVertices rotated_points_loc, sizeof real4 * 3
+	RotateVertices rotated_points_loc, 0
+	RotateVertices rotated_points_loc, 1
+	RotateVertices rotated_points_loc, 2
+	RotateVertices rotated_points_loc, 3
 	
-	RotateVertices rotated_points_loc, sizeof real4 * 4
-	RotateVertices rotated_points_loc, sizeof real4 * 5
-	RotateVertices rotated_points_loc, sizeof real4 * 6
-	RotateVertices rotated_points_loc, sizeof real4 * 7
+	RotateVertices rotated_points_loc, 4
+	RotateVertices rotated_points_loc, 5
+	RotateVertices rotated_points_loc, 6
+	RotateVertices rotated_points_loc, 7
 	
 	RestoreVertices
 	

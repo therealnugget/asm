@@ -134,7 +134,7 @@ QuatNormalize proc
 	ret
 QuatNormalize endp
 
-;xmm0: quaternion a, xmm1: quaternion b. returns the quaternion multiplication.
+;xmm0: quaternion a, xmm1: quaternion b. returns the quaternion multiplication in xmm0.
 QuatMult proc
 	vpshufd xmm2, xmm0, W_TO_X_MASK
 	vbroadcastss xmm2, xmm2
@@ -275,7 +275,6 @@ VecNormalize proc
 	movaps xmm1, xmm0
 	VectorDot xmm0, xmm0
 	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP
-	vbroadcastss xmm3, xmm3
 	rsqrtss xmm0, xmm0
 	pand xmm0, xmm3
 	vbroadcastss xmm0, xmm0
