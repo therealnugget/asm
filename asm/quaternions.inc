@@ -317,6 +317,61 @@ QuatAngleAxis proc
 	ret
 QuatAngleAxis endp
 
+;al: range[0:255] representing x rotation, cl: range[0:255] representing y rotation
+EulerToQuat proc
+	;let: phi = 0.0
+	;let: theta = cl
+	;let: z-rotation = al
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof xmmword * 3
+	shr al, 1
+	movzx ax, al
+	push rcx
+	push rax
+	sub rsp, 32
+	call sin
+	add rsp, 32
+	pop rax
+	movups xmmword ptr [rbp - sizeof xmmword * 1], xmm0;	xmm1: sin(al / 2)
+	sub rsp, 32
+	call cos
+	add rsp, 32
+	movups xmmword ptr [rbp - sizeof xmmword * 2], xmm0;	xmm2: cos(al / 2)
+	;purposely duplicating a bit of code here to make it more readable because realistically you don't want a proc here and you can't step into a macro
+	pop rcx
+	mov al, cl
+	shr al, 1
+	movzx ax, al
+	push rax
+	sub rsp, 32
+	call sin
+	add rsp, 32
+	movups xmmword ptr [rbp - sizeof xmmword * 3], xmm0;	xmm3: sin(cl / 2)
+	pop rax
+	sub rsp, 32
+	call cos
+	add rsp, 32
+	movups xmm1, xmmword ptr [rbp - sizeof xmmword * 1]
+	movups xmm2, xmmword ptr [rbp - sizeof xmmword * 2]
+	movups xmm3, xmmword ptr [rbp - sizeof xmmword * 3]
+	mov rsp, rbp
+	pop rbp
+	movaps xmm4, xmm0;										xmm4: cos(cl / 2)
+	mulss xmm0, xmm2;now the lower single-precision floating point value of xmm0 is cos(al/2)cos(cl/2). multiplying like this to save instructions because obviously cos(cl/2), xmm4, is left in xmm0
+	movaps xmm5, xmm1
+	mulss xmm5, negOne
+	mulss xmm5, xmm3
+	insertps xmm0, xmm5, INSERT_0_TO_1;now the second single-precision floating point value of xmm0 is -sin(cl/2)sin(al/2)
+	movaps xmm5, xmm2
+	mulss xmm5, xmm3
+	insertps xmm0, xmm5, INSERT_0_TO_2; now the third single-precision floating point value of xmm0 is sin(cl/2)cos(al/2)
+	mulss xmm1, xmm4
+	insertps xmm0, xmm1, INSERT_0_TO_3; now the highest single-precision floating point value of xmm0 is -sin(al/2)sin(cl/2)
+	ret
+	;https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+EulerToQuat endp
+
 ;al: a value in the range [0:255] which represents where on the curve to look up. returns an approximate sin value in xmm0.
 Sin proc
 	mov cl, 255

@@ -61,16 +61,21 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 
 	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
 	
+	;mov al, rotationX
+	;movups xmm0, xmmword ptr [XAxis]
+	;call QuatAngleAxis
+	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
+	;
+	;mov al, rotationY
+	;movups xmm0, xmmword ptr [YAxis]
+	;call QuatAngleAxis
+	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
+	;call QuatMult
+
 	mov al, rotationX
-	movups xmm0, xmmword ptr [XAxis]
-	call QuatAngleAxis
-	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
-	
-	mov al, rotationY
-	movups xmm0, xmmword ptr [YAxis]
-	call QuatAngleAxis
-	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
-	call QuatMult
+	mov cl, rotationY
+	call EulerToQuat
+
 	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
 	movups xmm1, xmmword ptr [AbsoluteRotation + VERTEX_OFFSET_INDEX * sizeof xmmword]
 

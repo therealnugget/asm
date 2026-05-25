@@ -146,11 +146,10 @@ ConvInputToScalar macro posKey, negKey, rotation, axis, keyBool, rotationForPos
 	pop rbx
 	mov byte ptr [keyBool], bl
 	or byte ptr [keyBool], al
-	shl bl, 1
-	shl al, 1
 	sub bl, al
-	mov byte ptr [rotationForPos], bl
 	add byte ptr [rotation], bl
+	shl bl, 1
+	mov byte ptr [rotationForPos], bl
 endm
 
 ;takes input from ymm0, adds to destVec in ymm1, stores in memory in destVec
