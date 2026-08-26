@@ -118,9 +118,9 @@ RestoreDefaultPoints macro
 endm
 
 RestoreVertices macro
-	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 5]
-	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 6]
-	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 7]
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 1]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 2]
+	vmovups ymm6, ymmword ptr [rbp - sizeof ymmword * 3]
 endm
 
 

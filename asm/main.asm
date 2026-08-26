@@ -126,7 +126,7 @@ MovV2VMem macro memDst, memSrc
 endm
 
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in bl.
-ConvInputToScalar macro posKey, negKey, rotation, axis, keyBool, rotationForPos
+ConvInputToScalar macro posKey, negKey, rotation
 	mov ecx, posKey
 	call GetKey
 	mov ebx, eax
@@ -136,14 +136,10 @@ ConvInputToScalar macro posKey, negKey, rotation, axis, keyBool, rotationForPos
 	call GetKey
 	add rsp, 28h
 	pop rbx
-	mov byte ptr [keyBool], bl
-	or byte ptr [keyBool], al
 	sub bl, al
 	;;this might be temp depending on whether it works well or not
 	shl bl, 1
 	mov byte ptr [rotation], bl
-	;shl bl, 1
-	;mov byte ptr [rotationForPos], bl
 endm
 
 CalcRot macro rotation, axis
@@ -250,6 +246,7 @@ noConsoleWindowInfoError:
 	vmovups ymmword ptr [cubeVerticesY], ymm5
 	vmovups ymmword ptr [cubeVerticesZ], ymm6
 
+
 mainLoopHead:
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -277,49 +274,9 @@ mainLoopHead:
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
 		vmovups ymmword ptr [squareInputZ], ymm0
 
-		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY, YAxis, isRotY, rotYForPos
-		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX, XAxis, isRotX, rotXForPos
+		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY
+		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX
 
-		jmp noRotation
-		cmp byte ptr [isRotX], 0
-		jz fromNoX
-
-		CalcRot rotXForPos, XAxis
-		movups [rbp - KEYCODE_MAX - sizeof xmmword], xmm0
-
-		cmp byte ptr [isRotY], 0
-		jz rotation
-		jmp bothRot
-	fromNoX:
-		cmp byte ptr [isRotY], 0
-		jz noRotation
-
-	checkYRot:
-		CalcRot rotYForPos, YAxis
-		jmp rotation
-	bothRot:
-		CalcRot rotYForPos, YAxis
-		movups xmm1, [rbp - KEYCODE_MAX - sizeof xmmword]
-		call QuatMult
-
-	rotation:
-		movd xmm1, dword ptr [squareInputX]
-		insertps xmm1, real4 ptr [squareInputY], INSERT_0_TO_1
-		insertps xmm1, real4 ptr [squareInputZ], INSERT_0_TO_2
-		call QuatMultVec
-
-		movss xmm1, xmm0
-		LoadRotPosAxis squareInputX
-		
-		extractps eax, xmm0, 1
-		movd xmm1, eax
-		LoadRotPosAxis squareInputY
-		
-		extractps eax, xmm0, 2
-		movd xmm1, eax
-		LoadRotPosAxis squareInputZ
-
-	noRotation:
 
 		vmovups ymm0, ymmword ptr [squareInputX]
 		vmovups ymm1, ymmword ptr [squareInputY]
