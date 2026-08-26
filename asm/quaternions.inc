@@ -23,6 +23,7 @@ EQU_VEC_CMP equ 0h
 PI_ON_4 equ 63
 
 SingleDefVec negOneVec, -1.0
+SingleDefVec oneVec, 1.0
 SingleDefVec twoVec, 2.0
 SingleDefVec negTwoVec, -2.0
 MAX_SIN_AMP real4 127.0
@@ -317,7 +318,7 @@ QuatAngleAxis proc
 	ret
 QuatAngleAxis endp
 
-;al: range[0:255] representing x rotation, cl: range[0:255] representing y rotation
+;al: range[0:255] representing z rotation, cl: range[0:255] representing y rotation. returns a quaternion from euler angles in xmm0
 EulerToQuat proc
 	;let: phi = 0.0
 	;let: theta = cl
@@ -352,9 +353,9 @@ EulerToQuat proc
 	sub rsp, 32
 	call cos
 	add rsp, 32
-	movups xmm1, xmmword ptr [rbp - sizeof xmmword * 1]
-	movups xmm2, xmmword ptr [rbp - sizeof xmmword * 2]
-	movups xmm3, xmmword ptr [rbp - sizeof xmmword * 3]
+	movups xmm1, xmmword ptr [rbp - sizeof xmmword * 1];	xmm1: sin(al / 2)
+	movups xmm2, xmmword ptr [rbp - sizeof xmmword * 2];	xmm2: cos(al / 2)
+	movups xmm3, xmmword ptr [rbp - sizeof xmmword * 3];	xmm3: sin(cl / 2)
 	mov rsp, rbp
 	pop rbp
 	movaps xmm4, xmm0;										xmm4: cos(cl / 2)
@@ -367,7 +368,7 @@ EulerToQuat proc
 	mulss xmm5, xmm3
 	insertps xmm0, xmm5, INSERT_0_TO_2; now the third single-precision floating point value of xmm0 is sin(cl/2)cos(al/2)
 	mulss xmm1, xmm4
-	insertps xmm0, xmm1, INSERT_0_TO_3; now the highest single-precision floating point value of xmm0 is -sin(al/2)sin(cl/2)
+	insertps xmm0, xmm1, INSERT_X_TO_W; now the highest single-precision floating point value of xmm0 is cos(cl/2)sin(al/2)
 	ret
 	;https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
 EulerToQuat endp

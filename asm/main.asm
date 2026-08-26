@@ -82,21 +82,13 @@ charBufferMaxVal SMALL_RECT {?, ?, ?, ?}
 charBufferLen dd ?
 maxCharValue dd ?
 SingleDefVec cubeScaleVec, 1.0
-SingleDefVec squarePositionX, 0.0
-SingleDefVec squarePositionY, 0.0
-SingleDefVec squarePositionZ, -5.0
+SingleDefVec squareInputX, 0.0
+SingleDefVec squareInputY, 0.0
+SingleDefVec squareInputZ, 0.0
 moveSpeed real4 0.1
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
-;the rotation around the centre of the cube
-AbsoluteRotation real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
-real4 0.0, 0.0, 0.0, 1.0
+ZAxis real4 0.0, 0.0, 1.0, 0.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
 isRotX db ?
@@ -147,15 +139,11 @@ ConvInputToScalar macro posKey, negKey, rotation, axis, keyBool, rotationForPos
 	mov byte ptr [keyBool], bl
 	or byte ptr [keyBool], al
 	sub bl, al
-	add byte ptr [rotation], bl
+	;;this might be temp depending on whether it works well or not
 	shl bl, 1
-	mov byte ptr [rotationForPos], bl
-endm
-
-;takes input from ymm0, adds to destVec in ymm1, stores in memory in destVec
-LoadValFromInp macro destVec
-	vaddps ymm0, ymm0, ymmword ptr [destVec]
-	vmovups ymmword ptr [destVec], ymm0
+	mov byte ptr [rotation], bl
+	;shl bl, 1
+	;mov byte ptr [rotationForPos], bl
 endm
 
 CalcRot macro rotation, axis
@@ -248,6 +236,20 @@ noConsoleWindowInfoError:
 	lea rax, [rbp - KEYCODE_MAX]
 	mov pressedKeys, rax
 
+	vmovups ymm4, ymmword ptr [cubeVerticesX]
+	vmovups ymm5, ymmword ptr [cubeVerticesY]
+	vmovups ymm6, ymmword ptr [cubeVerticesZ]
+	vmovups ymm0, ymmword ptr [cubeScaleVec]
+	vmulps ymm4, ymm4, ymm0
+	vmulps ymm5, ymm5, ymm0
+	vmulps ymm6, ymm6, ymm0
+
+	vaddps ymm6, ymm6, ymmword ptr [verticesZOffset]
+
+	vmovups ymmword ptr [cubeVerticesX], ymm4
+	vmovups ymmword ptr [cubeVerticesY], ymm5
+	vmovups ymmword ptr [cubeVerticesZ], ymm6
+
 mainLoopHead:
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -267,17 +269,18 @@ mainLoopHead:
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
-		LoadValFromInp squarePositionX
+		vmovups ymmword ptr [squareInputX], ymm0
 
 		ConvInputToVec KEYCODE_S, KEYCODE_W
-		LoadValFromInp squarePositionY
+		vmovups ymmword ptr [squareInputY], ymm0
 
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
-		LoadValFromInp squarePositionZ
+		vmovups ymmword ptr [squareInputZ], ymm0
 
 		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY, YAxis, isRotY, rotYForPos
 		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX, XAxis, isRotX, rotXForPos
 
+		jmp noRotation
 		cmp byte ptr [isRotX], 0
 		jz fromNoX
 
@@ -300,29 +303,28 @@ mainLoopHead:
 		call QuatMult
 
 	rotation:
-		movd xmm1, dword ptr [squarePositionX]
-		insertps xmm1, real4 ptr [squarePositionY], INSERT_0_TO_1
-		insertps xmm1, real4 ptr [squarePositionZ], INSERT_0_TO_2
+		movd xmm1, dword ptr [squareInputX]
+		insertps xmm1, real4 ptr [squareInputY], INSERT_0_TO_1
+		insertps xmm1, real4 ptr [squareInputZ], INSERT_0_TO_2
 		call QuatMultVec
 
 		movss xmm1, xmm0
-		LoadRotPosAxis squarePositionX
+		LoadRotPosAxis squareInputX
 		
 		extractps eax, xmm0, 1
 		movd xmm1, eax
-		LoadRotPosAxis squarePositionY
+		LoadRotPosAxis squareInputY
 		
 		extractps eax, xmm0, 2
 		movd xmm1, eax
-		LoadRotPosAxis squarePositionZ
+		LoadRotPosAxis squareInputZ
 
 	noRotation:
 
-		vmovups ymm0, ymmword ptr [cubeScaleVec]
-		vmovups ymm1, ymmword ptr [squarePositionX]
-		vmovups ymm2, ymmword ptr [squarePositionY]
-		vmovups ymm3, ymmword ptr [squarePositionZ]
-		call RenderCubeLocScale
+		vmovups ymm0, ymmword ptr [squareInputX]
+		vmovups ymm1, ymmword ptr [squareInputY]
+		vmovups ymm2, ymmword ptr [squareInputZ]
+		call RenderCubeLoc
 
 		mov rcx, stdOutHandle
 		mov rdx, charBuffer
