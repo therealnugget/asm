@@ -3,11 +3,29 @@ renderer equ 1
 .data
 SHUFFLE_ODD equ 136
 SHUFFLE_EVEN equ 221
+;minimum float value AS an integer
 FLT_MIN_I equ -26172378
+;minimum doubleword value AS a quadword
+I32_MIN_Q equ 2147483648
+;minimum doubleword value AS a doubleword
+I32_MIN equ -2147483648
+;minimum quadword value
+I64_MIN equ -9223372036854775808
+;a mask containing the minimum doubleword value AS a quadword and the minimum quadword value as a quadword
+BOTH_I_MIN_MASK equ -9223372034707292160
 
 HALF_ROTATION equ 127
 
 EXTRACT_LOW_WORD equ 0
+
+INSERT_0 equ 0
+INSERT_1 equ 1
+INSERT_2 equ 2
+INSERT_3 equ 3
+INSERT_4 equ 4
+INSERT_5 equ 5
+INSERT_6 equ 6
+INSERT_7 equ 7
 
 INSERT_0_TO_0 equ 0h
 INSERT_0_TO_1 equ 10h
@@ -77,7 +95,7 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
 	;call QuatMult
 
-
+	;;i'm using this one because it's simpler
 	;;;EULER SOLUTION:
 	mov al, rotationX
 	mov cl, rotationY
@@ -334,7 +352,23 @@ lineRenderLHLbl:
 	doneRenderLbl:
 endm
 
+;dst: xmm register, src: general purpoose register (gpr). inserts lowest word from gpr into xmm reg and shifts gpr by word
+InsertWordAndShift macro dst, src
+	pinsrw dst, src, INSERT_0
+	shl src, sizeof word
+endm
 
+;rcx: the first two triangle vertices, edx: the last triangle vertex
+RasterizeTri proc
+	;have to unroll to mimick compileer even though its ugly
+	InsertWordAndShift xmm0, rcx
+	InsertWordAndShift xmm0, rcx
+	InsertWordAndShift xmm0, rcx
+	InsertWordAndShift xmm0, rcx
+	InsertWordAndShift xmm0, rdx
+	InsertWordAndShift xmm0, rdx
+	ret
+RasterizeTri endp
 
 ;initial:
 ;0, 1, 2, 3, 4, 5, 6, 7

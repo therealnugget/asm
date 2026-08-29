@@ -148,6 +148,12 @@ CalcRot macro rotation, axis
 	call QuatAngleAxis
 endm
 
+;dst: destination register, val: value to shift in, shf: imm8 value to shift by
+ShiftIntoReg macro dst, val, shf
+	or dst, val
+	shl dst, shf
+endm
+
 LoadRotPosAxis macro pos
 	vbroadcastss ymm1, xmm1
 
@@ -282,6 +288,14 @@ mainLoopHead:
 		vmovups ymm1, ymmword ptr [squareInputY]
 		vmovups ymm2, ymmword ptr [squareInputZ]
 		call RenderCubeLoc
+
+		xor rcx, rcx
+		ShiftIntoReg rcx, 47, sizeof word
+		ShiftIntoReg rcx, 12, sizeof word
+		ShiftIntoReg rcx, 22, sizeof word
+		ShiftIntoReg rcx, 89, sizeof word
+		xor rdx, rdx
+		call RasterizeTri
 
 		mov rcx, stdOutHandle
 		mov rdx, charBuffer
