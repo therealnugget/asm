@@ -1,8 +1,6 @@
 ifndef renderer
 renderer equ 1
 .data
-SHUFFLE_ODD equ 136
-SHUFFLE_EVEN equ 221
 ;minimum float value AS an integer
 FLT_MIN_I equ -26172378
 ;minimum doubleword value AS a quadword
@@ -13,19 +11,10 @@ I32_MIN equ -2147483648
 I64_MIN equ -9223372036854775808
 ;a mask containing the minimum doubleword value AS a quadword and the minimum quadword value as a quadword
 BOTH_I_MIN_MASK equ -9223372034707292160
+;disregards z and w
+SHUFFLE_CROSS_X_Y equ 1
 
 HALF_ROTATION equ 127
-
-EXTRACT_LOW_WORD equ 0
-
-INSERT_0 equ 0
-INSERT_1 equ 1
-INSERT_2 equ 2
-INSERT_3 equ 3
-INSERT_4 equ 4
-INSERT_5 equ 5
-INSERT_6 equ 6
-INSERT_7 equ 7
 
 INSERT_0_TO_0 equ 0h
 INSERT_0_TO_1 equ 10h
@@ -53,7 +42,6 @@ cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 SingleDefVec verticesZOffset, -7.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
-float_min real4 -26172378.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
@@ -352,21 +340,157 @@ lineRenderLHLbl:
 	doneRenderLbl:
 endm
 
-;dst: xmm register, src: general purpoose register (gpr). inserts lowest word from gpr into xmm reg and shifts gpr by word
-InsertWordAndShift macro dst, src
-	pinsrw dst, src, INSERT_0
-	shl src, sizeof word
-endm
-
-;rcx: the first two triangle vertices, edx: the last triangle vertex
+;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex ((dummy word), (dummy word), x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers.
 RasterizeTri proc
-	;have to unroll to mimick compileer even though its ugly
-	InsertWordAndShift xmm0, rcx
-	InsertWordAndShift xmm0, rcx
-	InsertWordAndShift xmm0, rcx
-	InsertWordAndShift xmm0, rcx
-	InsertWordAndShift xmm0, rdx
-	InsertWordAndShift xmm0, rdx
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof xmmword * 3
+	
+	mov r10, rcx
+
+	xor r11d, r11d
+	mov r11w, r10w;		y2
+	cvtsi2ss xmm1, r11d
+	insertps xmm1, xmm1, INSERT_0_TO_1
+
+	shr r10, NUM_BITS_IN_WORD
+
+	xor r8d, r8d
+	mov r8w, r10w;	x2
+	cvtsi2ss xmm1, r8d
+
+	shr r10, NUM_BITS_IN_WORD
+	xor r9d, r9d
+	mov r9w, r10w;	y1
+
+	cvtsi2ss xmm0, r9d
+	insertps xmm0, xmm0, INSERT_0_TO_1
+
+	cmp r11w, r9w
+	;r11w: min(y1, y2)
+	cmovg r11w, r9w
+	;r12w: max(y1, y2)
+	cmovl r12w, r9w
+	shr r10, NUM_BITS_IN_WORD
+	mov r9w, r10w;	x1
+	cvtsi2ss xmm0, r9d
+
+	cmp r8w, r9w
+	;r8w: min(x1, x2)
+	cmovg r8w, r9w
+	;r13w: max(x1, x2)
+	cmovl r13w, r9w
+	mov r9w, dx;	y3
+	cvtsi2ss xmm2, r9d
+	insertps xmm2, xmm2, INSERT_0_TO_1
+
+	cmp r11w, r9w
+	;r11w: min y
+	cmovg r11w, r9w
+	;r12w: max y
+	cmovl r12w, r9w
+	shr rdx, NUM_BITS_IN_WORD
+	mov r9w, dx;	x3
+	cvtsi2ss xmm2, r9d
+	cmp r8w, r9w
+	;r8w: min x
+	cmovg r8w, r9w
+	;r13w: max x
+	cmovl r13w, r9w
+	
+	;xmm0: (x1, y1)
+	;xmm1: (x2, y2)
+	;xmm2: (x3, y3)
+
+	cvtsi2ss xmm9, r8d;min x
+	addss xmm9, oneHalf
+
+	cvtsi2ss xmm10, r11d;min y
+	addss xmm10, oneHalf
+	
+	;xmm10: (min y, min x)
+	insertps xmm10, xmm9, INSERT_0_TO_1
+
+	vsubps xmm3, xmm0, xmm1
+	pshufd xmm3, xmm3, SHUFFLE_CROSS_X_Y
+	mulss xmm3, negOne
+	;xmm12: b.y - a.y vertex 0
+	movaps xmm12, xmm3
+	;a.x - b.x vertex 0 @ rbp - sizeof xmmword
+	insertps xmmword ptr [rbp - sizeof xmmword], xmm3, INSERT_1_TO_0
+
+	;xmm3: p0.x(b.y - a.y) vertex 0
+	mulps xmm3, xmm10
+	;xmm9: p0.y(a.x - b.x) vertex 0
+	insertps xmm9, xmm3, INSERT_1_TO_0
+
+	vsubps xmm4, xmm1, xmm2
+	pshufd xmm4, xmm4, SHUFFLE_CROSS_X_Y
+	mulss xmm4, negOne
+	;xmm13: b.y - a.y vertex 0
+	movaps xmm13, xmm4
+	;a.x - b.x vertex 1 @ rbp - sizeof xmmword * 2
+	insertps xmmword ptr [rbp - sizeof xmmword * 2], xmm4, INSERT_1_TO_0
+
+	;xmm4: p0.x(b.y - a.y) vertex 1
+	mulps xmm4, xmm10
+	;xmm15: p0.y(a.x - b.x) vertex 1
+	insertps xmm15, xmm4, INSERT_1_TO_0
+	
+	vsubps xmm5, xmm2, xmm0
+	pshufd xmm5, xmm5, SHUFFLE_CROSS_X_Y
+	mulss xmm5, negOne
+	;xmm14: b.y - a.y vertex 0
+	movaps xmm14, xmm5
+	;a.x - b.x vertex 2 @ rbp - sizeof xmmword * 3
+	insertps xmmword ptr [rbp - sizeof xmmword * 3], xmm5, INSERT_1_TO_0
+
+	;xmm5: p0.x(b.y - a.y) vertex 2
+	mulps xmm5, xmm10
+	;xmm11: p0.y(a.x - b.x) vertex 2
+	insertps xmm11, xmm5, INSERT_1_TO_0
+
+	
+	pshufd xmm6, xmm0, SHUFFLE_CROSS_X_Y
+	mulps xmm6, xmm1
+	pshufd xmm7, xmm1, SHUFFLE_CROSS_X_Y
+	mulps xmm7, xmm2
+	pshufd xmm8, xmm2, SHUFFLE_CROSS_X_Y
+	mulps xmm8, xmm0
+
+	;xmm6: b.x * a.y - b.y * a.x vertex 0
+	hsubps xmm6, xmm6
+	
+	;xmm7: b.x * a.y - b.y * a.x vertex 1
+	hsubps xmm7, xmm7
+	
+	;xmm8: b.x * a.y - b.y * a.x vertex 2
+	hsubps xmm8, xmm8
+	
+
+	;iff (p.x(b.y - a.y) + p.y(a.x - b.x) + b.x * a.y - b.y * a.x > 0, the point is on the right side of the line.
+
+rasterizeYHead:
+	addss xmm9, xmmword ptr [rbp - sizeof xmmword]
+	cmpss xmm9, 
+	addss xmm15, xmmword ptr [rbp - sizeof xmmword * 2]
+	addss xmm11, xmmword ptr [rbp - sizeof xmmword * 3]
+	
+	;vmulps xmm9, xmm3, xmm15
+	;haddps xmm9, xmm9
+	;addss xmm9, xmm6
+	;
+	;vmulps xmm9, xmm4, xmm15
+	;haddps xmm9, xmm9
+	;addss xmm9, xmm7
+	;
+	;vmulps xmm9, xmm5, xmm15
+	;haddps xmm9, xmm9
+	;addss xmm9, xmm8
+
+
+	mov rsp, rbp
+	pop rbp
 	ret
 RasterizeTri endp
 

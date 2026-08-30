@@ -35,6 +35,7 @@ STD_OUTPUT_HANDLE equ -11
 small_rect_size equ sizeof SMALL_RECT
 bits_in_byte equ 8
 SW_MAXIMIZE equ 3
+NUM_BITS_IN_WORD equ sizeof word * bits_in_byte
 
 COORD struct
 	X dw 0
@@ -91,10 +92,6 @@ YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
 charBufferSize COORD {?, ?}
 bufferCoordOrigin COORD {0, 0}
-isRotX db ?
-isRotY db ?
-rotXForPos db 0
-rotYForPos db 0
 .code
 
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in xmm0, multiplies by moveSpeed then broadcasts to ymmReg
@@ -152,12 +149,6 @@ endm
 ShiftIntoReg macro dst, val, shf
 	or dst, val
 	shl dst, shf
-endm
-
-LoadRotPosAxis macro pos
-	vbroadcastss ymm1, xmm1
-
-	vmovups ymmword ptr [pos], ymm1
 endm
 
 main proc
@@ -290,11 +281,13 @@ mainLoopHead:
 		call RenderCubeLoc
 
 		xor rcx, rcx
-		ShiftIntoReg rcx, 47, sizeof word
-		ShiftIntoReg rcx, 12, sizeof word
-		ShiftIntoReg rcx, 22, sizeof word
-		ShiftIntoReg rcx, 89, sizeof word
-		xor rdx, rdx
+		ShiftIntoReg rcx, 6, NUM_BITS_IN_WORD
+		ShiftIntoReg rcx, 12, NUM_BITS_IN_WORD
+		ShiftIntoReg rcx, 22, NUM_BITS_IN_WORD
+		or rcx, 89
+		mov rdx, 67
+		shl rdx, sizeof word * bits_in_byte
+		or rdx, 50
 		call RasterizeTri
 
 		mov rcx, stdOutHandle

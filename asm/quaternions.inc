@@ -32,6 +32,7 @@ zero real4 0.0
 negTwo real4 -2.0
 two real4 2.0
 negOne real4 -1.0
+oneHalf real4 0.5
 acos_iteration_0 real4 -0.0187293
 acos_iteration_1 real4 0.0742610
 acos_iteration_2 real4 -0.2121144
@@ -89,15 +90,19 @@ Acos endp
 
 ;xmm0: vector3 a, xmm1: vector3 b. returns the cross product in xmm0. for all intents and purposes consider xmm0's w value to be an undefined arbitrary value
 VecCross proc
+	;(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
 	movaps xmm2, xmm0
-	pshufd xmm0, xmm0, SHUFFLE_CROSS_X_0
-	pshufd xmm1, xmm1, SHUFFLE_CROSS_Y_0
+	pshufd xmm0, xmm0, SHUFFLE_CROSS_X_0;(a.y, a.z, a.x)
+	;										*	*	*
+	pshufd xmm1, xmm1, SHUFFLE_CROSS_Y_0;(b.z, b.x, b.y)
 	mulps xmm0, xmm1
-	pshufd xmm2, xmm2, SHUFFLE_CROSS_X_1
-	pshufd xmm1, xmm1, SHUFFLE_CROSS_Y_1
+	pshufd xmm2, xmm2, SHUFFLE_CROSS_Y_0;(a.z, a.x, a.y)
+	;										*	*	*
+	pshufd xmm1, xmm1, SHUFFLE_CROSS_Y_0;(b.y, b.z, b.x)
 	mulps xmm1, xmm2
 	subps xmm0, xmm1
 	ret
+	;https://en.wikipedia.org/wiki/Cross_product
 VecCross endp
 
 ;xmmReg0: quaternion a, xmmReg1: quaternion b. high order bits of xmmReg0 are cleared, bits [255:128] of ymmReg0 are not affected
