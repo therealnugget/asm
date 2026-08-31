@@ -42,6 +42,7 @@ cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 SingleDefVec verticesZOffset, -7.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
+ONE_AT_1 real4 0.0, 1.0, 0.0, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
@@ -340,11 +341,23 @@ lineRenderLHLbl:
 	doneRenderLbl:
 endm
 
+ProcessX macro curX, deltaX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
+	addss curX, deltaX
+	vaddss intermediate, curY, curX
+	addss intermediate, const
+	comiss intermediate, real4 ptr [rbp - sizeof real4 * 6]
+	ja endFuncLabel
+	movups intermediate, xmmword ptr [ONE_AT_1]
+	addps curPixel, intermediate
+	jmp loopHead
+	endFuncLabel:
+endm
+
 ;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex ((dummy word), (dummy word), x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers.
 RasterizeTri proc
 	push rbp
 	mov rbp, rsp
-	sub rsp, sizeof xmmword * 3
+	sub rsp, sizeof real4 * 9
 	
 	mov r10, rcx
 
@@ -366,6 +379,7 @@ RasterizeTri proc
 	cvtsi2ss xmm0, r9d
 	insertps xmm0, xmm0, INSERT_0_TO_1
 
+	mov r12d, r11d
 	cmp r11w, r9w
 	;r11w: min(y1, y2)
 	cmovg r11w, r9w
@@ -375,6 +389,7 @@ RasterizeTri proc
 	mov r9w, r10w;	x1
 	cvtsi2ss xmm0, r9d
 
+	mov r13d, r8d
 	cmp r8w, r9w
 	;r8w: min(x1, x2)
 	cmovg r8w, r9w
@@ -387,26 +402,41 @@ RasterizeTri proc
 	cmp r11w, r9w
 	;r11w: min y
 	cmovg r11w, r9w
+	cvtsi2ss xmm6, r11d
+	;min y @ rbp - sizeof real4 * 9
+	movss real4 ptr [rbp - sizeof real4 * 9], xmm6
+	cmp r12w, r9w
 	;r12w: max y
 	cmovl r12w, r9w
+	;max y @ rbp - sizeof real4 * 5
+	cvtsi2ss xmm6, r12d
+	movss real4 ptr [rbp - sizeof real4 * 5], xmm6
+
 	shr rdx, NUM_BITS_IN_WORD
 	mov r9w, dx;	x3
 	cvtsi2ss xmm2, r9d
 	cmp r8w, r9w
 	;r8w: min x
 	cmovg r8w, r9w
+	cvtsi2ss xmm6, r8d
+	;min x @ rbp - sizeof real4 * 8
+	movss real4 ptr [rbp - sizeof real4 * 8], xmm6
+	cmp r13w, r9w
 	;r13w: max x
 	cmovl r13w, r9w
-	
+	;max x @ rbp - sizeof real4 * 4
+	cvtsi2ss xmm6, r13d
+	movss real4 ptr [rbp - sizeof real4 * 4], xmm6
+
 	;xmm0: (x1, y1)
 	;xmm1: (x2, y2)
 	;xmm2: (x3, y3)
 
-	cvtsi2ss xmm9, r8d;min x
-	addss xmm9, oneHalf
+	;min x
+	cvtsi2ss xmm9, r8d
 
-	cvtsi2ss xmm10, r11d;min y
-	addss xmm10, oneHalf
+	;min y
+	cvtsi2ss xmm10, r11d
 	
 	;xmm10: (min y, min x)
 	insertps xmm10, xmm9, INSERT_0_TO_1
@@ -416,40 +446,48 @@ RasterizeTri proc
 	mulss xmm3, negOne
 	;xmm12: b.y - a.y vertex 0
 	movaps xmm12, xmm3
-	;a.x - b.x vertex 0 @ rbp - sizeof xmmword
-	insertps xmmword ptr [rbp - sizeof xmmword], xmm3, INSERT_1_TO_0
+	insertps xmm6, xmm3, INSERT_1_TO_0
+	;a.x - b.x vertex 0 @ rbp - sizeof real4
+	movss real4 ptr [rbp - sizeof real4], xmm6
 
 	;xmm3: p0.x(b.y - a.y) vertex 0
-	mulps xmm3, xmm10
-	;xmm9: p0.y(a.x - b.x) vertex 0
+	mulss xmm3, real4 ptr [rbp - sizeof real4 * 8]
 	insertps xmm9, xmm3, INSERT_1_TO_0
+	;xmm9: p0.y(a.x - b.x) vertex 0
+	mulss xmm9, xmm10
 
 	vsubps xmm4, xmm1, xmm2
 	pshufd xmm4, xmm4, SHUFFLE_CROSS_X_Y
 	mulss xmm4, negOne
-	;xmm13: b.y - a.y vertex 0
+	;xmm13: b.y - a.y vertex 1
 	movaps xmm13, xmm4
-	;a.x - b.x vertex 1 @ rbp - sizeof xmmword * 2
-	insertps xmmword ptr [rbp - sizeof xmmword * 2], xmm4, INSERT_1_TO_0
+	insertps xmm6, xmm4, INSERT_1_TO_0
+	;a.x - b.x vertex 1 @ rbp - sizeof real4 * 2
+	movss real4 ptr [rbp - sizeof real4 * 2], xmm6
 
 	;xmm4: p0.x(b.y - a.y) vertex 1
-	mulps xmm4, xmm10
-	;xmm15: p0.y(a.x - b.x) vertex 1
+	mulss xmm4, real4 ptr [rbp - sizeof real4 * 8]
 	insertps xmm15, xmm4, INSERT_1_TO_0
+	;xmm15: p0.y(a.x - b.x) vertex 1
+	mulss xmm15, xmm10
 	
 	vsubps xmm5, xmm2, xmm0
 	pshufd xmm5, xmm5, SHUFFLE_CROSS_X_Y
 	mulss xmm5, negOne
-	;xmm14: b.y - a.y vertex 0
+	;xmm14: b.y - a.y vertex 2
 	movaps xmm14, xmm5
-	;a.x - b.x vertex 2 @ rbp - sizeof xmmword * 3
-	insertps xmmword ptr [rbp - sizeof xmmword * 3], xmm5, INSERT_1_TO_0
+	insertps xmm6, xmm5, INSERT_1_TO_0
+	;a.x - b.x vertex 2 @ rbp - sizeof real4 * 3
+	movss real4 ptr [rbp - sizeof real4 * 3], xmm6
 
 	;xmm5: p0.x(b.y - a.y) vertex 2
-	mulps xmm5, xmm10
-	;xmm11: p0.y(a.x - b.x) vertex 2
+	mulss xmm5, real4 ptr [rbp - sizeof real4 * 8]
 	insertps xmm11, xmm5, INSERT_1_TO_0
-
+	;xmm11: p0.y(a.x - b.x) vertex 2
+	mulss xmm11, xmm10
+	
+	movss xmm6, real4 ptr [zero]
+	movss real4 ptr [rbp - sizeof real4 * 6], xmm6
 	
 	pshufd xmm6, xmm0, SHUFFLE_CROSS_X_Y
 	mulps xmm6, xmm1
@@ -468,14 +506,54 @@ RasterizeTri proc
 	hsubps xmm8, xmm8
 	
 
-	;iff (p.x(b.y - a.y) + p.y(a.x - b.x) + b.x * a.y - b.y * a.x > 0, the point is on the right side of the line.
+	;iff (p.x(b.y - a.y) + p.y(a.x - b.x) + b.x * a.y - b.y * a.x) > 0, the point is on the right side of the line.
+
+	subss xmm10, one
 
 rasterizeYHead:
-	addss xmm9, xmmword ptr [rbp - sizeof xmmword]
-	cmpss xmm9, 
-	addss xmm15, xmmword ptr [rbp - sizeof xmmword * 2]
-	addss xmm11, xmmword ptr [rbp - sizeof xmmword * 3]
-	
+	movss xmm1, real4 ptr [rbp - sizeof real4 * 8]
+
+	movss xmm3, xmm1
+	mulss xmm3, xmm12
+	movss xmm4, xmm1
+	mulss xmm4, xmm13
+	movss xmm5, xmm1
+	mulss xmm5, xmm14
+
+	insertps xmm10, xmm1, INSERT_0_TO_1
+	addss xmm10, one
+	comiss xmm10, real4 ptr [rbp - sizeof real4 * 5]
+	ja breakRasterizeY
+	addss xmm9, real4 ptr [rbp - sizeof real4]
+	addss xmm15, real4 ptr [rbp - sizeof real4 * 2]
+	addss xmm11, real4 ptr [rbp - sizeof real4 * 3]
+	rasterizeXHead:
+		insertps xmm1, xmm10, INSERT_1_TO_0
+		comiss xmm1, real4 ptr [rbp - sizeof real4 * 4]
+		ja rasterizeYHead
+
+		ProcessX xmm3, xmm12, xmm9, xmm1, xmm10, xmm6, rasterizeXHead, efLbl1
+
+		ProcessX xmm4, xmm13, xmm15, xmm1, xmm10, xmm7, rasterizeXHead, efLbl2
+
+		ProcessX xmm5, xmm14, xmm11, xmm1, xmm10, xmm8, rasterizeXHead, efLbl3
+		
+		cvtss2si rax, xmm10
+		insertps xmm1, xmm10, INSERT_1_TO_0
+		cvtss2si rcx, xmm1
+		movzx rdx, word ptr [charbufferSize]
+		mul rdx
+		add rax, rcx
+		add rax, qword ptr [charBuffer]
+		mov byte ptr [rax], 'a'
+		
+		;xmm10: y, x
+		movups xmm1, xmmword ptr [ONE_AT_1]
+		addps xmm10, xmm1
+
+		jmp rasterizeXHead
+	jmp rasterizeYHead
+breakRasterizeY:
 	;vmulps xmm9, xmm3, xmm15
 	;haddps xmm9, xmm9
 	;addss xmm9, xmm6
@@ -737,7 +815,6 @@ RenderCubeLoc proc
 
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
-	;it unsettles me that this works. it should be that you multiply by the packed singles *before* converting.
 	vmulps ymm5, ymm5, ymm2
 	movzx eax, word ptr [charBufferMaxVal + sizeof word * 2]
 	movd xmm3, eax

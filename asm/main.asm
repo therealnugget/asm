@@ -281,13 +281,13 @@ mainLoopHead:
 		call RenderCubeLoc
 
 		xor rcx, rcx
-		ShiftIntoReg rcx, 6, NUM_BITS_IN_WORD
-		ShiftIntoReg rcx, 12, NUM_BITS_IN_WORD
-		ShiftIntoReg rcx, 22, NUM_BITS_IN_WORD
-		or rcx, 89
-		mov rdx, 67
+		ShiftIntoReg rcx, 10, NUM_BITS_IN_WORD
+		ShiftIntoReg rcx, 10, NUM_BITS_IN_WORD
+		ShiftIntoReg rcx, 40, NUM_BITS_IN_WORD
+		or rcx, 60
+		mov rdx, 30
 		shl rdx, sizeof word * bits_in_byte
-		or rdx, 50
+		or rdx, 10
 		call RasterizeTri
 
 		mov rcx, stdOutHandle
