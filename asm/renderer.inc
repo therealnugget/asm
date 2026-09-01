@@ -214,8 +214,9 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 
 	movaps xmm11, xmm9
 	dpps xmm9, xmm9, VECTOR_2_DOT_MASK
-	pand xmm9, xmmword ptr [ABS_VALUE_MASK_F]
+	vcmpss xmm10, xmm9, real4 ptr [zero], GREATER_VEC_CMP
 	rsqrtss xmm9, xmm9
+	pand xmm9, xmm10
 	vbroadcastss xmm9, xmm9
 	mulps xmm9, xmm11
 	
@@ -227,13 +228,13 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 
 	pxor xmm11, xmm11
 	vcmpps xmm11, xmm9, xmm11, LESS_EQU_VEC_CMP
-	movd r9d, xmm11;r9b = xmm11.x == -ve
-	pextrd r10d, xmm11, 1;r10b = xmm11.y == -ve
+	movd r9d, xmm11;r9b = xmm9.x == -ve
+	pextrd r10d, xmm11, 1;r10b = xmm9.y == -ve
 	
 	pxor xmm11, xmm11
 	vcmpps xmm11, xmm11, xmm9, LESS_EQU_VEC_CMP
-	movd r11d, xmm11;r11b = xmm11.x == +ve
-	pextrd r12d, xmm11, 1;r12b = xmm11.y == +ve
+	movd r11d, xmm11;r11b = xmm9.x == +ve
+	pextrd r12d, xmm11, 1;r12b = xmm9.y == +ve
 
 
 	cmp ecx, 0
@@ -260,16 +261,20 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	
 	sub ecx, edx
 	mov r9d, ecx
+
 	sar r9d, 31
 	xor ecx, r9d
 	sub ecx, r9d
+
 	cmp ecx, 1
 	setle cl
 	sub eax, r8d
 	mov r9d, eax
+
 	sar r9d, 31
 	xor eax, r9d
 	sub eax, r9d
+
 	cmp eax, 1
 	setle al
 	and al, cl
@@ -277,7 +282,10 @@ RenderLine macro lineRenderLHLbl, noRenderLbl, doneRenderLbl
 	test al, 1
 	jnz doneRenderLbl
 
+	mov eax, -1
 lineRenderLHLbl:
+		mov r13d, eax
+
 		movaps xmm10, xmm8
 		addps xmm8, xmm9
 		movd eax, xmm10
@@ -332,11 +340,17 @@ lineRenderLHLbl:
 
 		psubd xmm10, xmm7
 		AbsDwordVec xmm10, xmm11
+		pmulld xmm10, xmm10
 		movd eax, xmm10
 		pextrd ecx, xmm10, 1
 		add eax, ecx
 		cmp eax, 2
-		jg lineRenderLHLbl
+		setl r14b
+		cmp r13d, eax
+		setnae r15b
+		or r14b, r15b
+		test r14b, 1
+		jz lineRenderLHLbl
 
 	doneRenderLbl:
 endm
@@ -344,7 +358,7 @@ endm
 ProcessX macro curX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
 	vaddss intermediate, curY, curX
 	addss intermediate, const
-	comiss intermediate, real4 ptr [rbp - sizeof real4 * 6]
+	comiss intermediate, real4 ptr [zero]
 	ja endFuncLabel
 	movups intermediate, xmmword ptr [ONE_AT_1]
 	addps curPixel, intermediate
@@ -403,8 +417,8 @@ RasterizeTri proc
 	;r11w: min y
 	cmovg r11w, r9w
 	cvtsi2ss xmm6, r11d
-	;min y @ rbp - sizeof real4 * 9
-	movss real4 ptr [rbp - sizeof real4 * 9], xmm6
+	;min y @ rbp - sizeof real4 * 7
+	movss real4 ptr [rbp - sizeof real4 * 7], xmm6
 	cmp r12w, r9w
 	;r12w: max y
 	cmovl r12w, r9w
@@ -419,8 +433,8 @@ RasterizeTri proc
 	;r8w: min x
 	cmovg r8w, r9w
 	cvtsi2ss xmm6, r8d
-	;min x @ rbp - sizeof real4 * 8
-	movss real4 ptr [rbp - sizeof real4 * 8], xmm6
+	;min x @ rbp - sizeof real4 * 6
+	movss real4 ptr [rbp - sizeof real4 * 6], xmm6
 	cmp r13w, r9w
 	;r13w: max x
 	cmovl r13w, r9w
@@ -451,7 +465,7 @@ RasterizeTri proc
 	movss real4 ptr [rbp - sizeof real4], xmm6
 
 	;xmm3: p0.x(b.y - a.y) vertex 0
-	mulss xmm3, real4 ptr [rbp - sizeof real4 * 8]
+	mulss xmm3, real4 ptr [rbp - sizeof real4 * 6]
 	insertps xmm9, xmm3, INSERT_1_TO_0
 	;xmm9: p0.y(a.x - b.x) vertex 0
 	mulss xmm9, xmm10
@@ -466,7 +480,7 @@ RasterizeTri proc
 	movss real4 ptr [rbp - sizeof real4 * 2], xmm6
 
 	;xmm4: p0.x(b.y - a.y) vertex 1
-	mulss xmm4, real4 ptr [rbp - sizeof real4 * 8]
+	mulss xmm4, real4 ptr [rbp - sizeof real4 * 6]
 	insertps xmm15, xmm4, INSERT_1_TO_0
 	;xmm15: p0.y(a.x - b.x) vertex 1
 	mulss xmm15, xmm10
@@ -481,13 +495,10 @@ RasterizeTri proc
 	movss real4 ptr [rbp - sizeof real4 * 3], xmm6
 
 	;xmm5: p0.x(b.y - a.y) vertex 2
-	mulss xmm5, real4 ptr [rbp - sizeof real4 * 8]
+	mulss xmm5, real4 ptr [rbp - sizeof real4 * 6]
 	insertps xmm11, xmm5, INSERT_1_TO_0
 	;xmm11: p0.y(a.x - b.x) vertex 2
 	mulss xmm11, xmm10
-	
-	movss xmm6, real4 ptr [zero]
-	movss real4 ptr [rbp - sizeof real4 * 6], xmm6
 	
 	pshufd xmm6, xmm0, SHUFFLE_CROSS_X_Y
 	mulps xmm6, xmm1
@@ -511,7 +522,7 @@ RasterizeTri proc
 	subss xmm10, one
 
 rasterizeYHead:
-	movss xmm1, real4 ptr [rbp - sizeof real4 * 8]
+	movss xmm1, real4 ptr [rbp - sizeof real4 * 6]
 
 	movss xmm3, xmm1
 	mulss xmm3, xmm12
