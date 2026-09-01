@@ -372,6 +372,10 @@ RasterizeTri proc
 	push rbp
 	mov rbp, rsp
 	sub rsp, sizeof real4 * 9
+	push r12
+	push r13
+	push r14
+	push r15
 	
 	mov r10, rcx
 
@@ -570,6 +574,10 @@ rasterizeYHead:
 	jmp rasterizeYHead
 breakRasterizeY:
 
+	pop r15
+	pop r14
+	pop r13
+	pop r12
 	mov rsp, rbp
 	pop rbp
 	ret
@@ -632,6 +640,13 @@ RenderCubeLoc proc
 	push rbp
 	mov rbp, rsp
 	sub rsp, sizeof ymmword * 3 + sizeof ymmword * 3 + 20h + sizeof ymmword * 4 + sizeof xmmword
+
+	push rbx
+	push r12
+	push r13
+	push r14
+	push r15
+
 	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm6;;;z
@@ -735,11 +750,6 @@ RenderCubeLoc proc
 
 	vhsubps xmm6, xmm6, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in y
 
-	push rbx
-	push r12
-	push r13
-	push r14
-	push r15
 	cvtss2si ebx, xmm2
 
 	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1
@@ -804,12 +814,6 @@ RenderCubeLoc proc
 	LoadVerticalVerticesI xmm8, ymm4, ymm5, 7;final
 	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
 	RenderLine lh13, nr13, dontRender13
-	
-	pop r15
-	pop r14
-	pop r13
-	pop r12
-	pop rbx
 
 	;;;uses: ymm2, ymm4, ymm5
 	;;; | | | | |
@@ -855,6 +859,12 @@ renderCharHead:
 		mov byte ptr [rax], 'O'
 loopEnd:
 	loop renderCharHead
+	
+	pop r15
+	pop r14
+	pop r13
+	pop r12
+	pop rbx
 	mov rsp, rbp
 	pop rbp
 

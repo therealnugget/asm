@@ -288,7 +288,7 @@ mainLoopHead:
 		mov rdx, 370
 		shl rdx, sizeof word * bits_in_byte
 		or rdx, 10
-		;call RasterizeTri
+		call RasterizeTri
 
 		mov rcx, stdOutHandle
 		mov rdx, charBuffer
