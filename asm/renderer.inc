@@ -341,8 +341,7 @@ lineRenderLHLbl:
 	doneRenderLbl:
 endm
 
-ProcessX macro curX, deltaX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
-	addss curX, deltaX
+ProcessX macro curX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
 	vaddss intermediate, curY, curX
 	addss intermediate, const
 	comiss intermediate, real4 ptr [rbp - sizeof real4 * 6]
@@ -350,7 +349,8 @@ ProcessX macro curX, deltaX, curY, intermediate, curPixel, const, loopHead, endF
 	movups intermediate, xmmword ptr [ONE_AT_1]
 	addps curPixel, intermediate
 	jmp loopHead
-	endFuncLabel:
+endFuncLabel:
+
 endm
 
 ;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex ((dummy word), (dummy word), x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers.
@@ -445,7 +445,7 @@ RasterizeTri proc
 	pshufd xmm3, xmm3, SHUFFLE_CROSS_X_Y
 	mulss xmm3, negOne
 	;xmm12: b.y - a.y vertex 0
-	movaps xmm12, xmm3
+	movss xmm12, xmm3
 	insertps xmm6, xmm3, INSERT_1_TO_0
 	;a.x - b.x vertex 0 @ rbp - sizeof real4
 	movss real4 ptr [rbp - sizeof real4], xmm6
@@ -460,7 +460,7 @@ RasterizeTri proc
 	pshufd xmm4, xmm4, SHUFFLE_CROSS_X_Y
 	mulss xmm4, negOne
 	;xmm13: b.y - a.y vertex 1
-	movaps xmm13, xmm4
+	movss xmm13, xmm4
 	insertps xmm6, xmm4, INSERT_1_TO_0
 	;a.x - b.x vertex 1 @ rbp - sizeof real4 * 2
 	movss real4 ptr [rbp - sizeof real4 * 2], xmm6
@@ -475,7 +475,7 @@ RasterizeTri proc
 	pshufd xmm5, xmm5, SHUFFLE_CROSS_X_Y
 	mulss xmm5, negOne
 	;xmm14: b.y - a.y vertex 2
-	movaps xmm14, xmm5
+	movss xmm14, xmm5
 	insertps xmm6, xmm5, INSERT_1_TO_0
 	;a.x - b.x vertex 2 @ rbp - sizeof real4 * 3
 	movss real4 ptr [rbp - sizeof real4 * 3], xmm6
@@ -532,11 +532,15 @@ rasterizeYHead:
 		comiss xmm1, real4 ptr [rbp - sizeof real4 * 4]
 		ja rasterizeYHead
 
-		ProcessX xmm3, xmm12, xmm9, xmm1, xmm10, xmm6, rasterizeXHead, efLbl1
+		addss xmm3, xmm12
+		addss xmm4, xmm13
+		addss xmm5, xmm14
 
-		ProcessX xmm4, xmm13, xmm15, xmm1, xmm10, xmm7, rasterizeXHead, efLbl2
+		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, rasterizeXHead, efLbl1
 
-		ProcessX xmm5, xmm14, xmm11, xmm1, xmm10, xmm8, rasterizeXHead, efLbl3
+		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, rasterizeXHead, efLbl2
+
+		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, rasterizeXHead, efLbl3
 		
 		cvtss2si rax, xmm10
 		insertps xmm1, xmm10, INSERT_1_TO_0
@@ -554,18 +558,6 @@ rasterizeYHead:
 		jmp rasterizeXHead
 	jmp rasterizeYHead
 breakRasterizeY:
-	;vmulps xmm9, xmm3, xmm15
-	;haddps xmm9, xmm9
-	;addss xmm9, xmm6
-	;
-	;vmulps xmm9, xmm4, xmm15
-	;haddps xmm9, xmm9
-	;addss xmm9, xmm7
-	;
-	;vmulps xmm9, xmm5, xmm15
-	;haddps xmm9, xmm9
-	;addss xmm9, xmm8
-
 
 	mov rsp, rbp
 	pop rbp
