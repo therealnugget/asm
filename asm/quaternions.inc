@@ -21,6 +21,7 @@ GREATER_VEC_CMP equ 6h
 NOT_EQU_VEC_CMP equ 4h
 EQU_VEC_CMP equ 0h
 PI_ON_4 equ 63
+ABS_DWORD equ 7FFFFFFFh
 
 SingleDefVec negOneVec, -1.0
 SingleDefVec oneVec, 1.0

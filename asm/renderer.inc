@@ -13,8 +13,16 @@ I64_MIN equ -9223372036854775808
 BOTH_I_MIN_MASK equ -9223372034707292160
 ;disregards z and w
 SHUFFLE_CROSS_X_Y equ 1
+DESTROY_HIGH_WORD equ 0ffffh
+ADD_HIGH_WORD equ 0ffff0000h
+SIGN_BIT_WORD equ 8000h
 
 HALF_ROTATION equ 127
+
+INSERT_0 equ 0
+INSERT_1 equ 1
+INSERT_2 equ 2
+INSERT_3 equ 4
 
 INSERT_0_TO_0 equ 0h
 INSERT_0_TO_1 equ 10h
@@ -36,6 +44,7 @@ INSERT_3_TO_1 equ 0d0h
 INSERT_3_TO_2 equ 0e0h
 
 ;default cube veritces
+align 16
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
@@ -71,31 +80,30 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 
 	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
 	
-	;;;this initial rotation has two solutions. i have written both. i believe the quaternion one to be simpler so i will leave it in.
+	;;i'm using this one because it's more accurate
+	;;;this initial rotation has two solutions. i have written both. i believe the quaternion one to be more accurate so i will leave it in.
 	;;;QUATERNION SOLUTION:
-	;mov al, rotationX
-	;movups xmm0, xmmword ptr [XAxis]
-	;call QuatAngleAxis
-	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
-	;
-	;mov al, rotationY
-	;movups xmm0, xmmword ptr [YAxis]
-	;call QuatAngleAxis
-	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
-	;call QuatMult
-
-	;;i'm using this one because it's simpler
-	;;;EULER SOLUTION:
 	mov al, rotationX
-	mov cl, rotationY
-	call EulerToQuat
-	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
 	movups xmm0, xmmword ptr [XAxis]
+	call QuatAngleAxis
+	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
 	
-	mov al, HALF_ROTATION
+	mov al, rotationY
+	movups xmm0, xmmword ptr [YAxis]
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
 	call QuatMult
+
+	;;;EULER SOLUTION:
+	;mov al, rotationX
+	;mov cl, rotationY
+	;call EulerToQuat
+	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
+	;movups xmm0, xmmword ptr [XAxis]
+	;mov al, HALF_ROTATION
+	;call QuatAngleAxis
+	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
+	;call QuatMult
 
 
 	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
@@ -367,6 +375,21 @@ endFuncLabel:
 
 endm
 
+;i think i've *eventually* come to the conclusion that this is the best and only way to write macros in assembly. dont use actual registers, but rather pass them in. same with labels and instructions, therefore the macros have full transparency from the caller as to what they do and you can look at a macro and straight away tell which registers it uses, etc. That's not to say i'm going to go back and change all of the macros that don't match this type of signature, though.
+ExtendSignBackwards macro orig, intermediate1, intermediate2
+	xor intermediate1, intermediate1
+	test orig, SIGN_BIT_WORD
+	mov intermediate2, ADD_HIGH_WORD
+	cmovnz intermediate1, intermediate2
+	or orig, intermediate1
+	test orig, SIGN_BIT_WORD
+	mov intermediate2, -1
+	cmovnz intermediate1, intermediate2
+	mov intermediate2, DESTROY_HIGH_WORD
+	cmovz intermediate1, intermediate2
+	and orig, intermediate1
+endm
+
 ;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex ((dummy word), (dummy word), x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers.
 RasterizeTri proc
 	push rbp
@@ -376,11 +399,15 @@ RasterizeTri proc
 	push r13
 	push r14
 	push r15
+	push rbx
 	
 	mov r10, rcx
 
 	xor r11d, r11d
 	mov r11w, r10w;		y2
+	
+	ExtendSignBackwards r11d, eax, ebx
+
 	cvtsi2ss xmm1, r11d
 	insertps xmm1, xmm1, INSERT_0_TO_1
 
@@ -388,60 +415,75 @@ RasterizeTri proc
 
 	xor r8d, r8d
 	mov r8w, r10w;	x2
+	
+	ExtendSignBackwards r8d, eax, ebx
+
 	cvtsi2ss xmm1, r8d
 
 	shr r10, NUM_BITS_IN_WORD
 	xor r9d, r9d
 	mov r9w, r10w;	y1
 
+	ExtendSignBackwards r9d, eax, ebx
+
 	cvtsi2ss xmm0, r9d
 	insertps xmm0, xmm0, INSERT_0_TO_1
 
+	;comparing words here because the max data size is word, but moving in the double word because we need to back-exted the sign
 	mov r12d, r11d
 	cmp r11w, r9w
-	;r11w: min(y1, y2)
-	cmovg r11w, r9w
-	;r12w: max(y1, y2)
-	cmovl r12w, r9w
+	;r11d: min(y1, y2)
+	cmovg r11d, r9d
+	;r12d: max(y1, y2)
+	cmovl r12d, r9d
 	shr r10, NUM_BITS_IN_WORD
 	mov r9w, r10w;	x1
+	
+	ExtendSignBackwards r9d, eax, ebx
+
 	cvtsi2ss xmm0, r9d
 
 	mov r13d, r8d
 	cmp r8w, r9w
-	;r8w: min(x1, x2)
-	cmovg r8w, r9w
-	;r13w: max(x1, x2)
-	cmovl r13w, r9w
+	;r8d: min(x1, x2)
+	cmovg r8d, r9d
+	;r13d: max(x1, x2)
+	cmovl r13d, r9d
 	mov r9w, dx;	y3
+
+	ExtendSignBackwards r9d, eax, ebx
+
 	cvtsi2ss xmm2, r9d
 	insertps xmm2, xmm2, INSERT_0_TO_1
 
 	cmp r11w, r9w
-	;r11w: min y
-	cmovg r11w, r9w
+	;r11d: min y
+	cmovg r11d, r9d
 	cvtsi2ss xmm6, r11d
 	;min y @ rbp - sizeof real4 * 7
 	movss real4 ptr [rbp - sizeof real4 * 7], xmm6
 	cmp r12w, r9w
-	;r12w: max y
-	cmovl r12w, r9w
+	;r12d: max y
+	cmovl r12d, r9d
 	;max y @ rbp - sizeof real4 * 5
 	cvtsi2ss xmm6, r12d
 	movss real4 ptr [rbp - sizeof real4 * 5], xmm6
 
 	shr rdx, NUM_BITS_IN_WORD
 	mov r9w, dx;	x3
+
+	ExtendSignBackwards r9d, eax, ebx
+
 	cvtsi2ss xmm2, r9d
 	cmp r8w, r9w
 	;r8w: min x
-	cmovg r8w, r9w
+	cmovg r8d, r9d
 	cvtsi2ss xmm6, r8d
 	;min x @ rbp - sizeof real4 * 6
 	movss real4 ptr [rbp - sizeof real4 * 6], xmm6
 	cmp r13w, r9w
 	;r13w: max x
-	cmovl r13w, r9w
+	cmovl r13d, r9d
 	;max x @ rbp - sizeof real4 * 4
 	cvtsi2ss xmm6, r13d
 	movss real4 ptr [rbp - sizeof real4 * 4], xmm6
@@ -550,22 +592,40 @@ rasterizeYHead:
 		addss xmm3, xmm12
 		addss xmm4, xmm13
 		addss xmm5, xmm14
+		
+		cvtss2si rax, xmm10
+		insertps xmm1, xmm10, INSERT_1_TO_0
+		cvtss2si rcx, xmm1
+		cmp rax, 0
+		setl bl
+		cmp rcx, 0
+		setl dl
+		or bl, dl
+		;REMEMBER xmm10 is y, x NOT x, y
+		movzx rdx, word ptr [charBufferSize + sizeof word]
+		cmp rax, rdx
+		setge dl
+		or bl, dl
+		movzx rdx, word ptr [charBufferSize]
+		cmp rcx, rdx
+		setge dl
+		or bl, dl
+		test bl, 1
+		jnz skipRender
 
 		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, rasterizeXHead, efLbl1
 
 		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, rasterizeXHead, efLbl2
 
 		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, rasterizeXHead, efLbl3
-		
-		cvtss2si rax, xmm10
-		insertps xmm1, xmm10, INSERT_1_TO_0
-		cvtss2si rcx, xmm1
+
 		movzx rdx, word ptr [charbufferSize]
 		mul rdx
 		add rax, rcx
 		add rax, qword ptr [charBuffer]
 		mov byte ptr [rax], 'a'
 		
+	skipRender:
 		;xmm10: y, x
 		movups xmm1, xmmword ptr [ONE_AT_1]
 		addps xmm10, xmm1
@@ -574,6 +634,7 @@ rasterizeYHead:
 	jmp rasterizeYHead
 breakRasterizeY:
 
+	pop rbx
 	pop r15
 	pop r14
 	pop r13
@@ -673,7 +734,7 @@ RenderCubeLoc proc
 
 	movzx eax, word ptr [charbufferSize]
 	cvtsi2ss xmm0, eax
-	movzx eax, word ptr [charbufferSize + 2]
+	movzx eax, word ptr [charbufferSize + sizeof word]
 	cvtsi2ss xmm1, eax
 	vbroadcastss ymm2, xmm0
 	vbroadcastss ymm3, xmm1
@@ -815,15 +876,50 @@ RenderCubeLoc proc
 	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
 	RenderLine lh13, nr13, dontRender13
 
-	;;;uses: ymm2, ymm4, ymm5
+	;;;uses: ymm2, ymm4, ymm5, ymm0
 	;;; | | | | |
 	;;; | | | | |
 	;;; \/\/\/\/\/
 
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
+
+	;1, 3, 6
+	LoadVerticalVertices1 xmm7, xmm4, xmm5
+	LoadVerticalVertices2 xmm3, xmm4, xmm5
+	LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
+	movd ecx, xmm7
+
+	shl rcx, NUM_BITS_IN_WORD
+	extractps eax, xmm7, INSERT_1
+	and eax, DESTROY_HIGH_WORD
+	or ecx, eax
+	shl rcx, NUM_BITS_IN_WORD
+	movd eax, xmm3
+	or rcx, rax
+	shl rcx, NUM_BITS_IN_WORD
+	extractps eax, xmm3, INSERT_1
+	or rcx, rax
+	movd edx, xmm6
+	shl edx, NUM_BITS_IN_WORD
+	extractps eax, xmm6, INSERT_1
+	or edx, eax
+
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
+	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
+	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
+
+	call RasterizeTri
+
+	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
+	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
+
 	vmulps ymm5, ymm5, ymm2
-	movzx eax, word ptr [charBufferMaxVal + sizeof word * 2]
+	;why the hell did i originally put + charBufferMaxVal + sizeof word * 2 here?
+	movzx eax, word ptr [charBufferMaxVal]
 	movd xmm3, eax
 	vpbroadcastd ymm3, xmm3
 	vpcmpgtd ymm7, ymm4, ymm3
@@ -849,15 +945,27 @@ RenderCubeLoc proc
 	;;;vmovshdup ymm7, ymm4;odd
 	;;;vaddps ymm6, ymm6, ymm7
 
-	vmovups ymmword ptr [rsp], ymm0
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymm0
 	mov ecx, sizeof ymmword / sizeof dword
 renderCharHead:
-		mov eax, dword ptr [rsp + rcx * sizeof dword - sizeof dword]
-		cmp eax, 0
-		jl loopEnd
-		add rax, charBuffer
-		mov byte ptr [rax], 'O'
-loopEnd:
+		mov eax, ecx
+		mov edx, sizeof dword
+		mul edx
+		
+		sub rbp, rax
+		mov edx, dword ptr [rbp]
+		add rbp, rax
+
+		xor ebx, ebx
+		cmp edx, 0
+		cmovl edx, ebx
+		mov rbx, qword ptr [charBuffer]
+		movzx ebx, byte ptr [rbx]
+		cmovl eax, ebx
+		mov bl, '0'
+		cmovge eax, ebx
+		add rdx, qword ptr [charBuffer];HEEEY FUTURE ME when you get a chance read through 3.9 - 4 of the architecture manual
+		mov byte ptr [rdx], al
 	loop renderCharHead
 	
 	pop r15

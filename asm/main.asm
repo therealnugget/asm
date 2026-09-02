@@ -86,7 +86,7 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec squareInputX, 0.0
 SingleDefVec squareInputY, 0.0
 SingleDefVec squareInputZ, 0.0
-moveSpeed real4 0.1
+moveSpeed real4 0.035
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
@@ -288,7 +288,7 @@ mainLoopHead:
 		mov rdx, 370
 		shl rdx, sizeof word * bits_in_byte
 		or rdx, 10
-		call RasterizeTri
+		;call RasterizeTri
 
 		mov rcx, stdOutHandle
 		mov rdx, charBuffer
