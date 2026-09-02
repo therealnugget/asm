@@ -192,6 +192,14 @@ LoadVerticalVerticesI macro xmmDst, ymmSrc1, ymmSrc2, i
 	insertps xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i], INSERT_0_TO_1
 endm
 
+;uses ymmword of stack
+LoadVerticalVerticesIAtLoc macro xmmDst, ymmSrc1, ymmSrc2, i, ymmwordMem
+	vmovups ymmword ptr [ymmwordMem], ymmSrc1
+	movss xmmDst, real4 ptr [ymmwordMem + sizeof real4 * i]
+	vmovups ymmword ptr [ymmwordMem], ymmSrc2
+	insertps xmmDst, real4 ptr [ymmwordMem + sizeof real4 * i], INSERT_0_TO_1
+endm
+
 ;xmmInt is intermediate register that will be modified. only xmmDst and xmmInt are used.
 AbsDwordVec macro xmmDst, xmmInt
 	vpsrad xmmInt, xmmDst, 31
@@ -915,34 +923,34 @@ RenderCubeLoc proc
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 
-	;vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
-	;vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
-	;vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
-	;vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
-	;
-	;LoadVerticalVertices1 xmm7, xmm4, xmm5
-	;LoadVerticalVertices2 xmm3, xmm4, xmm5
-	;LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
-	;
-	;;movups xmm4, xmmword ptr [rbp - sizeof ymmword * 2 - sizeof xmmword]
-	;;movups xmm5, xmmword ptr [rbp - sizeof ymmword * 3 - sizeof xmmword]
-	;
-	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
-	;
-	;LoadVerticalVertices1 xmm7, xmm4, xmm5
-	;LoadVerticalVerticesI xmm3, ymm4, ymm5, 5
-	;LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
-	;
-	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
-	;
-	;vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
-	;vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
-	;vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
-	;vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
-	;
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
+	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
+	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
+	
+	LoadVerticalVertices1 xmm7, xmm4, xmm5
+	LoadVerticalVertices2 xmm3, xmm4, xmm5
+	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
+	
+	movups xmm4, xmmword ptr [rbp - sizeof ymmword * 2 - sizeof xmmword]
+	movups xmm5, xmmword ptr [rbp - sizeof ymmword * 3 - sizeof xmmword]
+	
+	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	
+	LoadFirstVerticalVertices xmm7, xmm4, xmm5
+	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, 2, rbp - sizeof ymmword * 5
+	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
+	
+	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	
+	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
+	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
+	
 	vmulps ymm5, ymm5, ymm2
-	;why the hell did i originally put + charBufferMaxVal + sizeof word * 2 here?
-	movzx eax, word ptr [charBufferMaxVal]
+	;add sizeof word * 2 because we're dipping into a struct's data here
+	movzx eax, word ptr [charBufferMaxVal + sizeof word * 2]
 	movd xmm3, eax
 	vpbroadcastd ymm3, xmm3
 	vpcmpgtd ymm7, ymm4, ymm3
