@@ -367,7 +367,7 @@ ProcessX macro curX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
 	vaddss intermediate, curY, curX
 	addss intermediate, const
 	comiss intermediate, real4 ptr [zero]
-	ja endFuncLabel
+	jae endFuncLabel
 	movups intermediate, xmmword ptr [ONE_AT_1]
 	addps curPixel, intermediate
 	jmp loopHead
@@ -398,7 +398,7 @@ RasterizeTri proc
 	push r12
 	push r13
 	push r14
-	push r15
+	push r15 
 	push rbx
 	
 	mov r10, rcx
@@ -687,6 +687,37 @@ InterleaveVertices macro loc
 	movss real4 ptr [loc + sizeof real4 * 3], xmm11
 endm
 
+;first three xmm registers are dword vertices. 
+LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGprD1, intGprD2, intGprD3
+
+	xor intGprD2, intGprD2
+	movd intGprD2, xmmReg1
+	shl intGpr2, NUM_BITS_IN_WORD
+	xor intGprD1, intGprD1
+	extractps intGprD1, xmmReg1, INSERT_1
+	and intGprD1, DESTROY_HIGH_WORD
+	or intGprD2, intGprD1
+	shl intGpr2, NUM_BITS_IN_WORD
+	xor intGprD1, intGprD1
+	movd intGprD1, xmmReg2
+	and intGprD1, DESTROY_HIGH_WORD
+	or intGpr2, intGpr1
+	shl intGpr2, NUM_BITS_IN_WORD
+	xor intGprD1, intGprD1
+	extractps intGprD1, xmmReg2, INSERT_1
+	and intGprD1, DESTROY_HIGH_WORD
+	or intGpr2, intGpr1
+	xor intGprD3, intGprD3
+	movd intGprD3, xmmReg3
+	shl intGprD3, NUM_BITS_IN_WORD
+	xor intGprD1, intGprD1
+	extractps intGprD1, xmmReg3, INSERT_1
+	and intGprD1, DESTROY_HIGH_WORD
+	or intGprD3, intGprD1
+
+	call RasterizeTri
+endm
+
 ;;renders a cube at some location
 ;;ymm0: input x, ymm1: input y, ymm2: input z
 RenderCubeLoc proc
@@ -884,39 +915,31 @@ RenderCubeLoc proc
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 
-	;1, 3, 6
-	LoadVerticalVertices1 xmm7, xmm4, xmm5
-	LoadVerticalVertices2 xmm3, xmm4, xmm5
-	LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
-	movd ecx, xmm7
-
-	shl rcx, NUM_BITS_IN_WORD
-	extractps eax, xmm7, INSERT_1
-	and eax, DESTROY_HIGH_WORD
-	or ecx, eax
-	shl rcx, NUM_BITS_IN_WORD
-	movd eax, xmm3
-	or rcx, rax
-	shl rcx, NUM_BITS_IN_WORD
-	extractps eax, xmm3, INSERT_1
-	or rcx, rax
-	movd edx, xmm6
-	shl edx, NUM_BITS_IN_WORD
-	extractps eax, xmm6, INSERT_1
-	or edx, eax
-
-	vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
-	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
-	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
-	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
-
-	call RasterizeTri
-
-	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
-	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
-	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
-	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
-
+	;vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
+	;vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
+	;vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
+	;vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
+	;
+	;LoadVerticalVertices1 xmm7, xmm4, xmm5
+	;LoadVerticalVertices2 xmm3, xmm4, xmm5
+	;LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
+	;
+	;;movups xmm4, xmmword ptr [rbp - sizeof ymmword * 2 - sizeof xmmword]
+	;;movups xmm5, xmmword ptr [rbp - sizeof ymmword * 3 - sizeof xmmword]
+	;
+	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	;
+	;LoadVerticalVertices1 xmm7, xmm4, xmm5
+	;LoadVerticalVerticesI xmm3, ymm4, ymm5, 5
+	;LoadVerticalVerticesI xmm6, ymm4, ymm5, 6
+	;
+	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	;
+	;vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
+	;vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
+	;vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
+	;vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
+	;
 	vmulps ymm5, ymm5, ymm2
 	;why the hell did i originally put + charBufferMaxVal + sizeof word * 2 here?
 	movzx eax, word ptr [charBufferMaxVal]
@@ -962,7 +985,7 @@ renderCharHead:
 		mov rbx, qword ptr [charBuffer]
 		movzx ebx, byte ptr [rbx]
 		cmovl eax, ebx
-		mov bl, '0'
+		mov bl, '0';TODO: not working
 		cmovge eax, ebx
 		add rdx, qword ptr [charBuffer];HEEEY FUTURE ME when you get a chance read through 3.9 - 4 of the architecture manual
 		mov byte ptr [rdx], al
