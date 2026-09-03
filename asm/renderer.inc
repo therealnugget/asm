@@ -58,6 +58,9 @@ PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
+LIGHTING_CHARS db 'D', 'L'
+TEMP_LIGHTING_CHAR_1 equ 'D'
+TEMP_LIGHTING_CHAR_2 equ 'L'
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -173,13 +176,19 @@ LoadVerticalVertices1 macro xmmDst, xmmSrc1, xmmSrc2
 	insertps xmmDst, xmmSrc2, INSERT_1_TO_1
 endm
 
-;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst
+;loads vertical vertices index 1 from xmmSrc1 and xmmSrc2 to xmmDst. INDEX 1, not first vertices.
+LoadVerticalVertices1_3D macro xmmDst, xmmSrc1, xmmSrc2
+	insertps xmmDst, xmmSrc1, INSERT_1_TO_0
+	insertps xmmDst, xmmSrc2, INSERT_1_TO_1
+endm
+
+;loads vertical vertices index 2 from xmmSrc1 and xmmSrc2 to xmmDst
 LoadVerticalVertices2 macro xmmDst, xmmSrc1, xmmSrc2
 	insertps xmmDst, xmmSrc1, INSERT_2_TO_0
 	insertps xmmDst, xmmSrc2, INSERT_2_TO_1
 endm
 
-;loads first vertical vertices from xmmSrc1 and xmmSrc2 to xmmDst
+;loads vertical vertices index 3 from xmmSrc1 and xmmSrc2 to xmmDst
 LoadVerticalVertices3 macro xmmDst, xmmSrc1, xmmSrc2
 	insertps xmmDst, xmmSrc1, INSERT_3_TO_0
 	insertps xmmDst, xmmSrc2, INSERT_3_TO_1
@@ -372,11 +381,13 @@ lineRenderLHLbl:
 	doneRenderLbl:
 endm
 
-ProcessX macro curX, curY, intermediate, curPixel, const, loopHead, endFuncLabel
+ProcessX macro curX, curY, intermediate, curPixel, const, area, loopHead, endFuncLabel
 	vaddss intermediate, curY, curX
 	addss intermediate, const
 	comiss intermediate, real4 ptr [zero]
 	jae endFuncLabel
+	movss intermediate, area
+	divss intermediate, two
 	movups intermediate, xmmword ptr [ONE_AT_1]
 	addps curPixel, intermediate
 	jmp loopHead
@@ -403,13 +414,16 @@ endm
 RasterizeTri proc
 	push rbp
 	mov rbp, rsp
-	sub rsp, sizeof real4 * 9
+	MAX_RASTERIZE_REAL4_LOC equ sizeof real4 * 9
+	sub rsp, MAX_RASTERIZE_REAL4_LOC - sizeof xmmword
 	push r12
 	push r13
 	push r14
 	push r15 
 	push rbx
 	
+	movups xmmword ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword], xmm2
+
 	mov r10, rcx
 
 	xor r11d, r11d
@@ -622,17 +636,40 @@ rasterizeYHead:
 		test bl, 1
 		jnz skipRender
 
-		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, rasterizeXHead, efLbl1
+		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, xmm0, rasterizeXHead, efLbl1
 
-		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, rasterizeXHead, efLbl2
+		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, real4 ptr [rbp - sizeof real4 * 8], rasterizeXHead, efLbl2
 
-		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, rasterizeXHead, efLbl3
+		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, xmm2, rasterizeXHead, efLbl3
+
+		movss xmm1, xmm0
+		addss xmm1, real4 ptr [rbp - sizeof real4 * 8]
+		addss xmm1, xmm2
+		;;;DEBUG
+		cmpss xmm1, real4 ptr [zero], EQU_VEC_CMP_SS
+		;jne noError
+		;int 3
+		;noError:
+		rcpss xmm1, xmm1
+		mulss xmm0, xmm1
+		mulss xmm0, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword]
+		mulss xmm2, xmm1
+		mulss xmm2, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4]
+		mulss xmm1, real4 ptr [rbp - sizeof real4 * 8]
+		mulss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4 * 2]
+		addss xmm0, xmm1
+		addss xmm0, xmm2
 
 		movzx rdx, word ptr [charbufferSize]
 		mul rdx
 		add rax, rcx
 		add rax, qword ptr [charBuffer]
-		mov byte ptr [rax], 'a'
+		movss xmm1, real4 ptr [negFive]
+		cmpss xmm1, xmm0, LESS_EQU_VEC_CMP
+		je dark
+		mov byte ptr [rax], 'D';TODO: this is munted. fix.
+		dark:
+		mov byte ptr [rax], 'L'
 		
 	skipRender:
 		;xmm10: y, x
@@ -697,6 +734,7 @@ InterleaveVertices macro loc
 endm
 
 ;first three xmm registers are dword vertices. 
+;LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr3, intGprD1, intGprD2, intGprD3, intGprD4
 LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGprD1, intGprD2, intGprD3
 
 	xor intGprD2, intGprD2
@@ -723,6 +761,7 @@ LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr
 	extractps intGprD1, xmmReg3, INSERT_1
 	and intGprD1, DESTROY_HIGH_WORD
 	or intGprD3, intGprD1
+	xor intGprD1, intGprD1
 
 	call RasterizeTri
 endm
@@ -839,6 +878,8 @@ RenderCubeLoc proc
 
 	vhsubps xmm3, xmm3, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in x
 
+	vmovups ymmword ptr [vertex2dLoc - sizeof ymmword], ymm6
+
 	vpslldq ymm6, ymm5, sizeof real4
 	vmovups ymmword ptr [ymmwordLoc], ymm6
 	vmovups ymmword ptr [vertex2dLoc], ymm5
@@ -916,11 +957,6 @@ RenderCubeLoc proc
 	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
 	RenderLine lh13, nr13, dontRender13
 
-	;;;uses: ymm2, ymm4, ymm5, ymm0
-	;;; | | | | |
-	;;; | | | | |
-	;;; \/\/\/\/\/
-
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 
@@ -929,25 +965,35 @@ RenderCubeLoc proc
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
 	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
 	
-	LoadVerticalVertices1 xmm7, xmm4, xmm5
+	xorpd xmm2, xmm2
+	insertps xmm2, real4 ptr [vertex2dLoc - sizeof ymmword], INSERT_1_TO_0
+	insertps xmm2, real4 ptr [vertex2dLoc - sizeof ymmword], INSERT_2_TO_1
+	insertps xmm2, real4 ptr [vertex2dLoc - sizeof ymmword + sizeof real4 * 6], INSERT_0_TO_2
+	LoadVerticalVertices1 xmm6, xmm4, xmm5
 	LoadVerticalVertices2 xmm3, xmm4, xmm5
-	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
-	
-	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
-	
-	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
-	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
-	
-	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, 5, rbp - sizeof ymmword * 5
-	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 1, rbp - sizeof ymmword * 5
 	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
 	
+
 	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	
+	;vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
+	;vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
+	;
+	;LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 5, rbp - sizeof ymmword * 5
+	;LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 1, rbp - sizeof ymmword * 5
+	;LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
+	;
+	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
 	
 	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
 	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
 	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
 	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 4]
+
+	;;;uses: ymm2, ymm4, ymm5, ymm0
+	;;; | | | | |
+	;;; | | | | |
+	;;; \/\/\/\/\/
 	
 	vmulps ymm5, ymm5, ymm2
 	;add sizeof word * 2 because we're dipping into a struct's data here
