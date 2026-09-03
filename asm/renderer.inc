@@ -45,6 +45,7 @@ INSERT_3_TO_2 equ 0e0h
 
 ;default cube veritces
 align 16
+;							1	2						6
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
@@ -932,14 +933,14 @@ RenderCubeLoc proc
 	LoadVerticalVertices2 xmm3, xmm4, xmm5
 	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
 	
-	movups xmm4, xmmword ptr [rbp - sizeof ymmword * 2 - sizeof xmmword]
-	movups xmm5, xmmword ptr [rbp - sizeof ymmword * 3 - sizeof xmmword]
-	
 	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
 	
-	LoadFirstVerticalVertices xmm7, xmm4, xmm5
-	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, 2, rbp - sizeof ymmword * 5
-	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
+	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
+	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
+	
+	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, 5, rbp - sizeof ymmword * 5
+	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 1, rbp - sizeof ymmword * 5
+	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, rbp - sizeof ymmword * 5
 	
 	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
 	
