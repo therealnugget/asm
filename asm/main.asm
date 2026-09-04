@@ -83,9 +83,9 @@ charBufferMaxVal SMALL_RECT {?, ?, ?, ?}
 charBufferLen dd ?
 maxCharValue dd ?
 SingleDefVec cubeScaleVec, 1.0
-SingleDefVec squareInputX, 0.0
-SingleDefVec squareInputY, 0.0
-SingleDefVec squareInputZ, 0.0
+SingleDefVec cameraInputX, 0.0
+SingleDefVec cameraInputY, 0.0
+SingleDefVec cameraInputZ, 0.0
 moveSpeed real4 0.1
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
@@ -263,32 +263,22 @@ mainLoopHead:
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
-		vmovups ymmword ptr [squareInputX], ymm0
+		vmovups ymmword ptr [cameraInputX], ymm0
 
 		ConvInputToVec KEYCODE_S, KEYCODE_W
-		vmovups ymmword ptr [squareInputY], ymm0
+		vmovups ymmword ptr [cameraInputY], ymm0
 
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
-		vmovups ymmword ptr [squareInputZ], ymm0
+		vmovups ymmword ptr [cameraInputZ], ymm0
 
 		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY
 		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX
 
 
-		vmovups ymm0, ymmword ptr [squareInputX]
-		vmovups ymm1, ymmword ptr [squareInputY]
-		vmovups ymm2, ymmword ptr [squareInputZ]
+		vmovups ymm0, ymmword ptr [cameraInputX]
+		vmovups ymm1, ymmword ptr [cameraInputY]
+		vmovups ymm2, ymmword ptr [cameraInputZ]
 		call RenderCubeLoc
-
-		xor rcx, rcx
-		ShiftIntoReg rcx, 20, NUM_BITS_IN_WORD
-		ShiftIntoReg rcx, 25, NUM_BITS_IN_WORD
-		ShiftIntoReg rcx, 40, NUM_BITS_IN_WORD
-		or rcx, 60
-		mov rdx, 370
-		shl rdx, sizeof word * bits_in_byte
-		or rdx, 10
-		;call RasterizeTri
 
 		mov rcx, stdOutHandle
 		mov rdx, charBuffer

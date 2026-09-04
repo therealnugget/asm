@@ -2,7 +2,7 @@ ifndef quaternionInc
 .data
 quaternionInc equ 1
 QUATERNION_DOT_MASK equ 0f1h
-VECTOR_DOT_MASK equ 071h
+VECTOR3_DOT_MASK equ 071h
 VECTOR_2_DOT_MASK equ 031h
 ;;i.e. highest to lowest
 W_TO_X_MASK equ 3h
@@ -33,7 +33,6 @@ zero real4 0.0
 negTwo real4 -2.0
 two real4 2.0
 negOne real4 -1.0
-negFive real4 -5.0
 oneHalf real4 0.5
 acos_iteration_0 real4 -0.0187293
 acos_iteration_1 real4 0.0742610
@@ -112,9 +111,9 @@ QuatDot macro xmmReg0, xmmReg1
 	dpps xmmReg0, xmmReg1, QUATERNION_DOT_MASK
 endm
 
-;xmmReg0: vector a, xmmReg1: vector b. high order bits of xmmReg0 are cleared, bits [255:128] of ymmReg0 are not affected
-VectorDot macro xmmReg0, xmmReg1
-	dpps xmmReg0, xmmReg1, VECTOR_DOT_MASK
+;xmmReg0: vector a, xmmReg1: vector b. high order bits of xmmReg0 are cleared, bits [255:128] of xmmReg0 are not affected
+Vector3Dot macro xmmReg0, xmmReg1
+	dpps xmmReg0, xmmReg1, VECTOR3_DOT_MASK
 endm
 
 ;xmmReg: quaternion to test the squared length of. high order bits of xmmReg are cleared, bits [255:128] of ymmReg are not affected
@@ -171,7 +170,7 @@ QuatMult proc
 	pshufd xmm3, xmm4, W_TO_X_MASK;w of a in xmm3
 	pshufd xmm1, xmm5, W_TO_X_MASK;w of b in xmm1
 	;all bits higher than least significant single-precision floating point value are zeroed
-	dpps xmm4, xmm5, VECTOR_DOT_MASK
+	dpps xmm4, xmm5, VECTOR3_DOT_MASK
 	mulss xmm1, xmm3
 	subss xmm1, xmm4
 	insertps xmm0, xmm1, INSERT_X_TO_W
@@ -281,7 +280,7 @@ QuatAxis endp
 ;xmm0: the vector3 to normalize. returns the normalized vector in xmm0
 VecNormalize proc
 	movaps xmm1, xmm0
-	VectorDot xmm0, xmm0
+	Vector3Dot xmm0, xmm0
 	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP
 	rsqrtss xmm0, xmm0
 	pand xmm0, xmm3
