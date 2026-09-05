@@ -36,6 +36,7 @@ small_rect_size equ sizeof SMALL_RECT
 bits_in_byte equ 8
 SW_MAXIMIZE equ 3
 NUM_BITS_IN_WORD equ sizeof word * bits_in_byte
+NUM_BITS_IN_DWORD equ sizeof dword * bits_in_byte
 
 COORD struct
 	X dw 0

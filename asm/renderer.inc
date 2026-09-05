@@ -48,7 +48,7 @@ align 16
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
-LightPosition real4 0.0, 0.0, 0.0, 0.0
+LightPosition real4 0.0, 1.0, 1.0, 0.0
 SingleDefVec verticesZOffset, -7.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
@@ -61,7 +61,7 @@ rotationY db 0
 LIGHTING_CHARS db 'D', 'L'
 TEMP_LIGHTING_CHAR_1 db 'L'
 TEMP_LIGHTING_CHAR_2 db 'D'
-TEMP_LIGHTING_THRESHOLD real4 60.0
+TEMP_LIGHTING_THRESHOLD real4 200.0
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -410,20 +410,29 @@ ExtendSignBackwards macro orig, intermediate1, intermediate2
 	and orig, intermediate1
 endm
 
-;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex (yWorld3, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
-;xmm2: (z3, z2, z1, xWorld1, yWorld1, xWorld2, yWorld2, xWorld3) (where z1 is the lowest 
+CalcLighting macro xmmArea, xmmIntermediate, xmmCumulative, zLocation, yLocation, xLocation, lightingLocation
+	movss xmmIntermediate, real4 ptr [zLocation]
+	insertps xmmIntermediate, real4 ptr [yLocation], INSERT_0_TO_1
+	insertps xmmIntermediate, real4 ptr [xLocation], INSERT_0_TO_2
+	Vector3Dot xmmIntermediate, xmmword ptr [lightingLocation]
+	mulss xmmIntermediate, xmmArea
+	addss xmmCumulative, xmmIntermediate
+endm
+
+;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
+;ymm2:  (xW3, yW2, xW2, yW1, xW1, z3, z2, z1), (where xWorld3 is the lowest real4)
 RasterizeTri proc
 	push rbp
 	mov rbp, rsp
 	MAX_RASTERIZE_REAL4_LOC equ sizeof real4 * 8
-	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof xmmword * 1
+	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4
 	push r12
 	push r13
 	push r14
 	push r15 
 	push rbx
 
-	movups xmmword ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword], xmm2
+	vmovups ymmword ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword], ymm2
 
 	mov r10, rcx
 
@@ -500,6 +509,10 @@ RasterizeTri proc
 	mov r9w, dx;	x3
 
 	ExtendSignBackwards r9d, eax, ebx
+
+	shr rdx, NUM_BITS_IN_WORD
+	cvtsi2ss xmm6, edx
+	movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4], xmm6
 
 	cvtsi2ss xmm2, r9d
 	cmp r8w, r9w
@@ -660,37 +673,40 @@ rasterizeYHead:
 		jz skipRender
 		rcpss xmm1, xmm1
 
-		mulss xmm0, xmm1
-		mulss xmm0, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword]
-		mulss xmm2, xmm1
-		mulss xmm2, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4]
-		mulss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
-		mulss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4 * 2]
-		addss xmm0, xmm1
-		addss xmm0, xmm2
-		mulss xmm0, xmm0
-		movss xmm1, xmm10
-		movzx edx, word ptr [charBufferSize + sizeof word]
-		cvtsi2ss xmm2, edx
-		mulss xmm2, oneHalf
-		subss xmm1, xmm2
-		mulss xmm1, xmm1
-		addss xmm0, xmm1
-		insertps xmm1, xmm10, INSERT_1_TO_0
-		movzx edx, word ptr [charBufferSize]
-		cvtsi2ss xmm2, edx
-		mulss xmm2, oneHalf
-		subss xmm1, xmm2
-		mulss xmm1, xmm1
-		addss xmm0, xmm1
-		sqrtss xmm0, xmm0
+		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightPosition
+		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6, LightPosition
+		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1, LightPosition
+
+		;mulss xmm2, xmm1
+		;mulss xmm2, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4]
+		;mulss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
+		;mulss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4 * 2]
+		;
+		;addss xmm0, xmm1
+		;addss xmm0, xmm2
+		;mulss xmm0, xmm0
+		;movss xmm1, xmm10
+		;movzx edx, word ptr [charBufferSize + sizeof word]
+		;cvtsi2ss xmm2, edx
+		;mulss xmm2, oneHalf
+		;subss xmm1, xmm2
+		;mulss xmm1, xmm1
+		;addss xmm0, xmm1
+		;insertps xmm1, xmm10, INSERT_1_TO_0
+		;movzx edx, word ptr [charBufferSize]
+		;cvtsi2ss xmm2, edx
+		;mulss xmm2, oneHalf
+		;subss xmm1, xmm2
+		;mulss xmm1, xmm1
+		;addss xmm0, xmm1
+		;sqrtss xmm0, xmm0
 
 		movzx rdx, word ptr [charbufferSize]
 		mul rdx
 		add rax, rcx
 		add rax, qword ptr [charBuffer]
 		movss xmm1, real4 ptr [TEMP_LIGHTING_THRESHOLD]
-		comiss xmm1, xmm0
+		comiss xmm1, xmm2
 		jna dark
 		mov byte ptr [rax], 'D'
 		jmp skipRender
@@ -760,8 +776,8 @@ InterleaveVertices macro loc
 	movss real4 ptr [loc + sizeof real4 * 3], xmm11
 endm
 
-;xmmReg1: (x1, y1, x2, y2) (where y2 is the lowest word), xmmReg2: (dummy, dummy, x3, y3), xmm2: (z1, z2, z3), r9: sign to multiply z by
-LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGprD1, intGprD2, intGprD3
+;xmmReg1: (x1, y1, x2, y2) (where y2 is the lowest word), xmmReg2: (yW3Real4HighPart, yW3Real4LowPart, y3, x3)
+LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr3, intGprD1, intGprD2, intGprD3, zYmmLoc
 
 	xor intGprD2, intGprD2
 	movd intGprD2, xmmReg1
@@ -771,6 +787,7 @@ LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr
 	and intGprD1, DESTROY_HIGH_WORD
 	or intGprD2, intGprD1
 	shl intGpr2, NUM_BITS_IN_WORD
+	;;TODO: check if you can remove the xor in these parts (except for the first instance of the instruction to clear intGprD1)
 	xor intGprD1, intGprD1
 	movd intGprD1, xmmReg2
 	and intGprD1, DESTROY_HIGH_WORD
@@ -780,14 +797,15 @@ LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr
 	extractps intGprD1, xmmReg2, INSERT_1
 	and intGprD1, DESTROY_HIGH_WORD
 	or intGpr2, intGpr1
-	xor intGprD3, intGprD3
+	xor intGprD1, intGprD1
+	mov intGprD1, dword ptr [zYmmLoc + sizeof real4 * 7]
+	mov intGprD3, intGprD1
 	movd intGprD3, xmmReg3
 	shl intGprD3, NUM_BITS_IN_WORD
 	xor intGprD1, intGprD1
 	extractps intGprD1, xmmReg3, INSERT_1
 	and intGprD1, DESTROY_HIGH_WORD
 	or intGprD3, intGprD1
-	xor intGprD1, intGprD1
 
 	call RasterizeTri
 endm
@@ -995,30 +1013,43 @@ RenderCubeLoc proc
 	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
 
 	;TODO: make the following 25 or so lines into a macro
+
+	movups xmm1, xmmword ptr [zeroVec]
+	YMM_Z_LOC_RASTERIZE_LOAD equ rbp - sizeof ymmword * 9
+	movups xmmword ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof xmmword], xmm1
+
 	vmovups ymm1, ymmword ptr [rbp - sizeof ymmword * 7]
 	vmovups ymm8, ymmword ptr [rbp - sizeof ymmword * 8]
-	movups xmmword ptr [rbp - sizeof ymmword * 9 + sizeof xmmword], zeroVec
-	insertps xmm8, xmm8, INSERT_1_TO_0
-	movss real4 ptr [rbp - sizeof ymmword * 9 + sizeof real4 * 4], xmm8
-	insertps xmm1, xmm1, INSERT_2_TO_0
-	movss real4 ptr [rbp - sizeof ymmword * 9 + sizeof real4 * 5], xmm1
-	movups xmm2, ymmword ptr [rbp - sizeof ymmword * 9]
-	insertps xmm2, xmm1, INSERT_1_TO_3
 
-	
+	insertps xmm8, xmm8, INSERT_1_TO_0
+	movss real4 ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof real4 * 4], xmm8
+	insertps xmm1, xmm1, INSERT_2_TO_0
+	movss real4 ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof real4 * 5], xmm1
+	insertps xmm8, xmm8, INSERT_2_TO_0
+	movss real4 ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof real4 * 6], xmm8
+	movss xmm1, real4 ptr [rbp - sizeof ymmword * 7 + sizeof real4 * 6]
+	movss real4 ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof real4 * 7], xmm1
+	insertps xmm1, xmm1, INSERT_3_TO_0
+	movss real4 ptr [YMM_Z_LOC_RASTERIZE_LOAD + sizeof real4 * 3], xmm1
+
+	vmovups ymm2, ymmword ptr [YMM_Z_LOC_RASTERIZE_LOAD]
+
+	;float z coordinates
 	vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 5]
 	insertps xmm2, xmm0, INSERT_1_TO_0
 	insertps xmm2, xmm0, INSERT_2_TO_1
 	movss xmm0, real4 ptr [rbp - sizeof ymmword * 5 + sizeof real4 * 6]
-	;xmm2: (z1, z2, z3, xW1, yW1, xW2, yW2, xW3)
+	;xmm2: (xW3, yW2, xW2, yW1, xW1, z3, z2, z1)
 	insertps xmm2, xmm0, INSERT_0_TO_2
-
 
 	LoadVerticalVertices1 xmm6, xmm4, xmm5
 	LoadVerticalVertices2 xmm3, xmm4, xmm5
-	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, rbp - sizeof ymmword * 6
 
-	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
+	;have to make these names painfully long because even though the symbol is local to the function, the compiler doesn't see it that way and we can't repeat symbols
+	INT_YMM_RASTER_LOAD_LOC equ rbp - sizeof ymmword * 6
+	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, INT_YMM_RASTER_LOAD_LOC
+
+	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, rdx, eax, ecx, edx, YMM_Z_LOC_RASTERIZE_LOAD
 
 	;vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 5]
 	;movss xmm0, real4 ptr [rbp - sizeof ymmword * 5 + sizeof real4 * 5]
@@ -1029,9 +1060,9 @@ RenderCubeLoc proc
 	;vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
 	;vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
 	;
-	;LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 5, rbp - sizeof ymmword * 6
+	;LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, 5, INT_YMM_RASTER_LOAD_LOC
 	;LoadVerticalVertices1 xmm3, xmm4, xmm5
-	;LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, rbp - sizeof ymmword * 6
+	;LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, 6, INT_YMM_RASTER_LOAD_LOC
 	;
 	;LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, eax, ecx, edx
 	
