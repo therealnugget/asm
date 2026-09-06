@@ -61,7 +61,7 @@ rotationY db 0
 LIGHTING_CHARS db 'D', 'L'
 TEMP_LIGHTING_CHAR_1 db 'L'
 TEMP_LIGHTING_CHAR_2 db 'D'
-TEMP_LIGHTING_THRESHOLD real4 200.0
+TEMP_LIGHTING_THRESHOLD real4 -0.0
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -410,11 +410,15 @@ ExtendSignBackwards macro orig, intermediate1, intermediate2
 	and orig, intermediate1
 endm
 
-CalcLighting macro xmmArea, xmmIntermediate, xmmCumulative, zLocation, yLocation, xLocation, lightingLocation
+CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, xmmCumulative, zLocation, xLocation, yLocation, lightingLocation, intermediateLoc
+	movss real4 ptr [intermediateLoc], xmmArea
 	movss xmmIntermediate, real4 ptr [zLocation]
 	insertps xmmIntermediate, real4 ptr [yLocation], INSERT_0_TO_1
 	insertps xmmIntermediate, real4 ptr [xLocation], INSERT_0_TO_2
+	;we're using xmmArea AS an intermediate here.
+	Vec3NormalizeMacro xmmIntermediate, xmmArea, xmmIntermediate2
 	Vector3Dot xmmIntermediate, xmmword ptr [lightingLocation]
+	movss xmmArea, real4 ptr [intermediateLoc]
 	mulss xmmIntermediate, xmmArea
 	addss xmmCumulative, xmmIntermediate
 endm
@@ -425,7 +429,7 @@ RasterizeTri proc
 	push rbp
 	mov rbp, rsp
 	MAX_RASTERIZE_REAL4_LOC equ sizeof real4 * 8
-	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4
+	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4 * 2
 	push r12
 	push r13
 	push r14
@@ -673,10 +677,13 @@ rasterizeYHead:
 		jz skipRender
 		rcpss xmm1, xmm1
 
-  movss xmm2, real4 ptr [zero]
-		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightPosition
-		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6, LightPosition
-		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1, LightPosition
+		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], xmm3
+		movss xmm2, real4 ptr [zero]
+		;had to use rbp - 72 here otherwise the line is too long and the compiler can't handle it, but it's rbp - sizeof real4 * 8 - sizeof ymmword - sizeof real4 * 2.
+		CalcLighting xmm1, xmm0, xmm3, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightPosition, rbp - 72
+		CalcLighting xmm1, xmm0, xmm3, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6, LightPosition, rbp - 72
+		CalcLighting xmm1, xmm0, xmm3, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1, LightPosition, rbp - 72
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
 
 		;mulss xmm2, xmm1
 		;mulss xmm2, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof xmmword + sizeof real4]

@@ -278,7 +278,7 @@ QuatAxis proc
 QuatAxis endp
 
 ;xmm0: the vector3 to normalize. returns the normalized vector in xmm0
-VecNormalize proc
+Vec3Normalize proc
 	movaps xmm1, xmm0
 	Vector3Dot xmm0, xmm0
 	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP
@@ -287,7 +287,18 @@ VecNormalize proc
 	vbroadcastss xmm0, xmm0
 	mulps xmm0, xmm1
 	ret
-VecNormalize endp
+Vec3Normalize endp
+
+;normalizes xmmVec as a vector3. xmmInt1 and xmmInt2 are intermediate xmm registers.
+Vec3NormalizeMacro macro xmmVec, xmmInt1, xmmInt2
+	movaps xmmInt1, xmmVec
+	Vector3Dot xmmVec, xmmVec
+	vcmpss xmmInt2, xmmVec, zero, GREATER_VEC_CMP
+	rsqrtss xmmVec, xmmVec
+	pand xmmVec, xmmInt2
+	vbroadcastss xmmVec, xmmVec
+	mulps xmmVec, xmmInt1
+endm
 
 ;al: a value in the range [0:255] which represents angle, xmm0: vector3. returns the quaternion Rotated around the axis in xmm0
 QuatAngleAxis proc
@@ -295,7 +306,7 @@ QuatAngleAxis proc
 	mov rbp, rsp
 	sub rsp, 20h + sizeof word + sizeof xmmword * 2 + 6
 
-	call VecNormalize
+	call Vec3Normalize
 	movups xmmword ptr [rbp - sizeof word - sizeof xmmword], xmm0
 
 	movzx ax, al
