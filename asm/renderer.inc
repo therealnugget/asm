@@ -673,6 +673,7 @@ rasterizeYHead:
 		jz skipRender
 		rcpss xmm1, xmm1
 
+  movss xmm2, real4 ptr [zero]
 		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightPosition
 		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6, LightPosition
 		CalcLighting xmm1, xmm0, xmm2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1, LightPosition
