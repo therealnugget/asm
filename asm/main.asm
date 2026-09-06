@@ -87,7 +87,7 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
-moveSpeed real4 0.1
+moveSpeed real4 0.04
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
