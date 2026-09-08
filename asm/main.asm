@@ -101,7 +101,7 @@ SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
 moveSpeed real4 10.0
-rotationSpeed real4 200.0
+rotationSpeed real4 270.0
 timerQuadpartSecondDivisor real4 1000000.0
 frequency LARGE_INTEGER {{?, ?}}
 pTime LARGE_INTEGER {{?, ?}}
@@ -304,8 +304,10 @@ mainLoopHead:
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
 		mov bl, al
+		push rbx
 		mov ecx, KEYCODE_Q
 		call GetKeyDown
+		pop rbx
 		and al, bl
 		jnz afterMainLoop
 

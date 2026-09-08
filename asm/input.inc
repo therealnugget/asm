@@ -38,18 +38,21 @@ GetPastKey proc
 GetPastKey endp
 ;key: dword
 GetKeyDown proc
-	mov [rbp - 8], rcx
-	sub rsp, 40
-	push rbx
+	push rbp
+	mov rbp, rsp
+	sub rsp, 32
+	push rcx
 	call GetKey
-	mov bl, al
-	mov rcx, [rbp - 8]
+	mov dl, al
+	push rdx
+	pop rcx
 	call GetPastKey
+	pop rdx
 	;notting the lsb
-	xor al, 1
-	and al, bl
-	pop rbx
-	add rsp, 40
+	not al
+	and al, dl
+	mov rsp, rbp
+	pop rbp
 	ret
 GetKeyDown endp
 endif
