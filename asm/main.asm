@@ -21,6 +21,8 @@ extern GetConsoleScreenBufferInfo: proc
 extern SetConsoleDisplayMode: proc
 extern GetConsoleWindow: proc
 extern ShowWindow: proc
+extern QueryPerformanceCounter: proc
+extern QueryPerformanceFrequency: proc
 .data
 CONSOLE_FULLSCREEN_MODE equ 1
 CONSOLE_WINDOWED_MODE equ 2
@@ -37,6 +39,8 @@ bits_in_byte equ 8
 SW_MAXIMIZE equ 3
 NUM_BITS_IN_WORD equ sizeof word * bits_in_byte
 NUM_BITS_IN_DWORD equ sizeof dword * bits_in_byte
+TIMER_QUADPART_MULTIPLICAND equ 1000000
+FRAME_WAIT_TIME equ 1
 
 COORD struct
 	X dw 0
@@ -53,8 +57,8 @@ Char union
 	UnicodeChar dw ?
 	;;char
 	AsciiChar db ?
-	Char ends
-	CHAR_INFO struct
+Char ends
+CHAR_INFO struct
 	charUnion Char {0}
 	Attributes dw ?
 CHAR_INFO ends
@@ -76,6 +80,15 @@ CONSOLE_SCREEN_BUFFER_INFOEX struct
 	bFullScreenSupported db ?
 	ColorTable dd ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 CONSOLE_SCREEN_BUFFER_INFOEX ends
+DUMMYSTRUCTNAME_LARGE_INTEGER_ struct
+	LowPart dd ?
+	HighPart dd ?
+DUMMYSTRUCTNAME_LARGE_INTEGER_ ends
+LARGE_INTEGER union
+	dummyStruct DUMMYSTRUCTNAME_LARGE_INTEGER_ {?, ?}
+	u DUMMYSTRUCTNAME_LARGE_INTEGER_ {?, ?}
+	QuadPart dq ?
+LARGE_INTEGER ends
 
 charBuffer dq ?
 stdOutHandle dq ?
@@ -87,7 +100,12 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
-moveSpeed real4 0.04
+moveSpeed real4 10.0
+rotationSpeed real4 200.0
+timerQuadpartSecondDivisor real4 1000000.0
+frequency LARGE_INTEGER {{?, ?}}
+pTime LARGE_INTEGER {{?, ?}}
+cTime LARGE_INTEGER {{?, ?}}
 XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
@@ -105,10 +123,15 @@ ConvInputToVec macro posKey, negKey
 	call GetKey
 	pop rbx
 	sub ebx, eax
-
-	cvtsi2ss xmm0, ebx
-	mulss xmm0, moveSpeed
-	vbroadcastss ymm0, xmm0
+	push rbx
+	sub rsp, 20h
+	call DeltaTime
+	add rsp, 20h
+	pop rbx
+	cvtsi2ss xmm1, ebx
+	mulss xmm1, moveSpeed
+	mulss xmm1, xmm0
+	vbroadcastss ymm1, xmm1
 endm
 
 ;uses xmm0. mov scalar to scalar with memory
@@ -126,17 +149,27 @@ endm
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in bl.
 ConvInputToScalar macro posKey, negKey, rotation
 	mov ecx, posKey
+	sub rsp, 20h
 	call GetKey
+	add rsp, 20h
 	mov ebx, eax
 	push rbx
-	sub rsp, 28h
+	sub rsp, 20h
 	mov ecx, negKey
 	call GetKey
-	add rsp, 28h
+	add rsp, 20h
 	pop rbx
 	sub bl, al
-	;;this might be temp depending on whether it works well or not
-	shl bl, 1
+	push rbx
+	sub rsp, 20h
+	call DeltaTime
+	add rsp, 20h
+	pop rbx
+	movsx rbx, bl
+	cvtsi2ss xmm1, rbx
+	mulss xmm1, xmm0
+	mulss xmm1, real4 ptr[rotationSpeed]
+	cvtss2si rbx, xmm1
 	mov byte ptr [rotation], bl
 endm
 
@@ -151,6 +184,23 @@ ShiftIntoReg macro dst, val, shf
 	or dst, val
 	shl dst, shf
 endm
+
+DeltaTime proc
+	lea rcx, cTime
+	sub rsp, 20h
+	call QueryPerformanceCounter
+	add rsp, 20h
+	mov rax, qword ptr [cTime]
+	sub rax, qword ptr [pTime]
+	mov rdx, TIMER_QUADPART_MULTIPLICAND
+	mul rdx
+	cvtsi2ss xmm0, rax
+	cvtsi2ss xmm1, qword ptr [frequency]
+	divss xmm0, xmm1
+	movss xmm1, timerQuadpartSecondDivisor
+	divss xmm0, xmm1
+	ret
+DeltaTime endp
 
 main proc
 
@@ -244,8 +294,13 @@ noConsoleWindowInfoError:
 	vmovups ymmword ptr [cubeVerticesY], ymm5
 	vmovups ymmword ptr [cubeVerticesZ], ymm6
 
+	lea rcx, frequency
+	call QueryPerformanceFrequency
+	lea rcx, pTime
+	call QueryPerformanceCounter
 
 mainLoopHead:
+		
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
 		mov bl, al
@@ -264,13 +319,13 @@ mainLoopHead:
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
-		vmovups ymmword ptr [cameraInputX], ymm0
+		vmovups ymmword ptr [cameraInputX], ymm1
 
 		ConvInputToVec KEYCODE_S, KEYCODE_W
-		vmovups ymmword ptr [cameraInputY], ymm0
+		vmovups ymmword ptr [cameraInputY], ymm1
 
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
-		vmovups ymmword ptr [cameraInputZ], ymm0
+		vmovups ymmword ptr [cameraInputZ], ymm1
 
 		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY
 		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX
@@ -301,7 +356,10 @@ mainLoopHead:
 		dec rbx
 		jnz pastKeyLoop
 
-		mov ecx, 1
+		lea rcx, pTime
+		call QueryPerformanceCounter
+
+		mov ecx, FRAME_WAIT_TIME
 		call Sleep
 	jmp mainLoopHead
 afterMainLoop:

@@ -50,7 +50,7 @@ align 16
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
-LightDirection real4 -0.0, -1.0, -1.0, 0.0
+LightDirection real4 -0.0, -0.0, 10.0, 0.0
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
@@ -60,9 +60,10 @@ PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
-LIGHTING_CHARS db '@', '%', '&', '$', '#', '!', '*', '+', ',', '.'
-NUM_LIGHTING_CHARS real4 9.0
-MAX_LIGHTING real4 0.01
+;LIGHTING_CHARS db '@', '%', '&', '$', '#', '!', '+', '*', ',', "'", '.'
+LIGHTING_CHARS db '.', "'", ',', '*', '+', '!', '#', '$', '&', '%', '@'
+NUM_LIGHTING_CHARS real4 10.0
+MAX_LIGHTING real4 0.1
 MIN_LIGHTING real4 0.0
 .code
 
@@ -417,9 +418,11 @@ CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, zLocation, xLocat
 	movss xmmIntermediate, real4 ptr [zLocation]
 	insertps xmmIntermediate, real4 ptr [yLocation], INSERT_0_TO_1
 	insertps xmmIntermediate, real4 ptr [xLocation], INSERT_0_TO_2
+
 	movss real4 ptr [intLoc], xmmArea
 	Vec3NormalizeMacro xmmIntermediate, xmmIntermediate2, xmmArea
 	movss xmmArea, real4 ptr [intLoc]
+
 	Vector3Dot xmmIntermediate, xmmword ptr [lightingLocation]
 	mulss xmmIntermediate, xmmArea
 	movss xmmIntermediate2, real4 ptr [cumulativeLoc]
@@ -1081,9 +1084,9 @@ RenderCubeLoc proc
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
 	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 7, 5, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 2, 0, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 3, 2, 0, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 2, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 0, 2, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	
 	;vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 5]
 	;movss xmm0, real4 ptr [rbp - sizeof ymmword * 5 + sizeof real4 * 5]
