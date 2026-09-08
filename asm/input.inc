@@ -43,7 +43,6 @@ GetKeyDown proc
 	push rbx
 	call GetKey
 	mov bl, al
-	;don't forget rbx was pushed!!!
 	mov rcx, [rbp - 8]
 	call GetPastKey
 	;notting the lsb

@@ -1,6 +1,7 @@
 ifndef renderer
 renderer equ 1
 draw_vertices equ 0
+draw_lines equ 1
 .data
 ;minimum float value AS an integer
 FLT_MIN_I equ -26172378
@@ -49,7 +50,7 @@ align 16
 cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
-LightDirection real4 -0.0, -0.0, 1.0, 0.0
+LightDirection real4 -0.0, -1.0, -1.0, 0.0
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
@@ -59,10 +60,10 @@ PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
-LIGHTING_CHARS db '@', '%', '&', '$', '#', '!', '*', '+', ',', '`'
+LIGHTING_CHARS db '@', '%', '&', '$', '#', '!', '*', '+', ',', '.'
 NUM_LIGHTING_CHARS real4 9.0
-MAX_LIGHTING real4 0.9
-MIN_LIGHTING real4 -0.4
+MAX_LIGHTING real4 0.01
+MIN_LIGHTING real4 0.0
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -412,11 +413,13 @@ ExtendSignBackwards macro orig, intermediate1, intermediate2
 endm
 
 ;area is weighted by inverse area sum 1 / (areaABP + areaBCP + areaCAP).
-CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, zLocation, xLocation, yLocation, lightingLocation, cumulativeLoc
+CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, zLocation, xLocation, yLocation, lightingLocation, cumulativeLoc, intLoc
 	movss xmmIntermediate, real4 ptr [zLocation]
 	insertps xmmIntermediate, real4 ptr [yLocation], INSERT_0_TO_1
 	insertps xmmIntermediate, real4 ptr [xLocation], INSERT_0_TO_2
-
+	movss real4 ptr [intLoc], xmmArea
+	Vec3NormalizeMacro xmmIntermediate, xmmIntermediate2, xmmArea
+	movss xmmArea, real4 ptr [intLoc]
 	Vector3Dot xmmIntermediate, xmmword ptr [lightingLocation]
 	mulss xmmIntermediate, xmmArea
 	movss xmmIntermediate2, real4 ptr [cumulativeLoc]
@@ -430,7 +433,7 @@ RasterizeTri proc
 	push rbp
 	mov rbp, rsp
 	MAX_RASTERIZE_REAL4_LOC equ sizeof real4 * 9
-	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4 * 3
+	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4 * 4
 	push r12
 	push r13
 	push r14
@@ -668,11 +671,11 @@ rasterizeYHead:
 		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, xmm2, rasterizeXHead, efLbl3
 
 		movss xmm1, real4 ptr [rbp - sizeof real4 * 8]
-		mulss xmm1, oneHalf
+		mulss xmm1, real4 ptr [oneHalf]
 		movss real4 ptr [rbp - sizeof real4 * 8], xmm1
-		mulss xmm0, oneHalf
+		mulss xmm0, real4 ptr [oneHalf]
 		addss xmm1, xmm0
-		mulss xmm2, oneHalf
+		mulss xmm2, real4 ptr [oneHalf]
 		addss xmm1, xmm2
 		movd edx, xmm1
 		test edx, -1
@@ -687,15 +690,16 @@ rasterizeYHead:
 		mulss xmm2, xmm1
 
 		mov dword ptr [rbp - 76], 0
-		;had to use rbp - 76 here otherwise the line is too long and the compiler can't handle it, but it's rbp - sizeof real4 * 9 - sizeof ymmword - sizeof real4 * 2.
-		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightDirection, rbp - 76
+		;had to use rbp - 76 here otherwise the line is too long and the compiler can't handle it, but it's rbp - sizeof real4 * 9 - sizeof ymmword - sizeof real4 * 2
+		;rbp - 84 is rbp - sizeof real4 * 9 - sizeof ymmword - sizeof real4 * 4
+		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, LightDirection, rbp - 76, rbp - 84
 		RASTERIZE_X_LOC_1 equ rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6
 		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], xmm0
 		movss xmm0, real4 ptr [rbp - sizeof real4 * 8]
-		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, RASTERIZE_X_LOC_1, LightDirection, rbp - 76
+		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5, RASTERIZE_X_LOC_1, LightDirection, rbp - 76, rbp - 84
 		movss xmm0, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
 		RASTERIZE_X_LOC_2 equ rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1
-		CalcLighting xmm2, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, RASTERIZE_X_LOC_2, LightDirection, rbp - 76
+		CalcLighting xmm2, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, RASTERIZE_X_LOC_2, LightDirection, rbp - 76, rbp - 84
 		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 3]
 
 		movzx rdx, word ptr [charbufferSize]
@@ -917,6 +921,8 @@ RenderCubeLoc proc
 	vdivps ymm4, ymm4, ymm6
 	vdivps ymm5, ymm5, ymm6
 
+	vmovups ymmword ptr [rbp - sizeof ymmword * 5], ymm6
+
 	vmulps ymm4, ymm4, ymm2
 	vmulps ymm5, ymm5, ymm3
 
@@ -926,7 +932,8 @@ RenderCubeLoc proc
 	vaddps ymm4, ymm4, ymm0;final x floating-point vertices
 	vaddps ymm5, ymm5, ymm1;final y floating-point vertices
 
-	
+	if draw_lines
+
 	ymmwordLoc equ rbp - sizeof ymmword
 	vertex2dLoc equ ymmwordLoc - sizeof ymmword
 
@@ -965,7 +972,6 @@ RenderCubeLoc proc
 
 	vhsubps xmm3, xmm3, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in x
 
-	vmovups ymmword ptr [rbp - sizeof ymmword * 5], ymm6
 
 	vpslldq ymm6, ymm5, sizeof real4
 	vmovups ymmword ptr [ymmwordLoc], ymm6
@@ -1044,6 +1050,8 @@ RenderCubeLoc proc
 	LoadVerticalVertices3 xmm9, xmm14, xmm15;difference
 	RenderLine lh13, nr13, dontRender13
 
+	endif
+
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 
@@ -1073,9 +1081,9 @@ RenderCubeLoc proc
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
 	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 7, 5, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 3, 2, 0, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 2, 0, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 0, 2, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 2, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 5 , rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	
 	;vmovups ymm0, ymmword ptr [rbp - sizeof ymmword * 5]
 	;movss xmm0, real4 ptr [rbp - sizeof ymmword * 5 + sizeof real4 * 5]
