@@ -314,7 +314,7 @@ mainLoopHead:
 		mov rax, charBuffer
 		mov ecx, charBufferLen
 		xor rdx, rdx
-		mov dl, '`'
+		mov dl, "'"
 
 	charAssignHead:
 		mov byte ptr [rax + rcx * sizeof byte - sizeof byte], dl
