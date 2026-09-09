@@ -101,7 +101,7 @@ SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
 moveSpeed real4 10.0
-rotationSpeed real4 270.0
+rotationSpeed real4 340.0
 timerQuadpartSecondDivisor real4 1000000.0
 frequency LARGE_INTEGER {{?, ?}}
 pTime LARGE_INTEGER {{?, ?}}
@@ -208,8 +208,8 @@ main proc
 	push rbp
 	mov rbp, rsp
 
-	;the sizeof xmmword on the end is to calculate the cube's position rotation for the x axis, so that when that of the y is calculated, the x can be loaded back in before the quaternions are multiplied.
-	sub rsp, (16 + 32) + sizeof xmmword;32 bytes of shadow stack space + 8 bytes for the fifth argument + another 8 bytes to keep func stack aligned by 16 bytes
+	;the sizeof xmmword is to calculate the cube's position rotation for the x axis, so that when that of the y is calculated, the x can be loaded back in before the quaternions are multiplied.
+	sub rsp, (16 + 32)
 	
 	call GetProcessHeap
 	mov heapHandle, rax
@@ -276,9 +276,10 @@ noErrorConsoleBufferSize:
 	
 noConsoleWindowInfoError:
 
-	sub rsp, KEYCODE_MAX
-	lea rax, [rbp - KEYCODE_MAX]
-	mov pressedKeys, rax
+	;multiplied by sizeof byte
+	mov rcx, KEYCODE_MAX
+	call MemAlloc
+	mov qword ptr [pressedKeys], rax
 
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
 	vmovups ymm5, ymmword ptr [cubeVerticesY]
@@ -343,20 +344,25 @@ mainLoopHead:
 		mov r8d, charBufferLen
 		mov r9d, bufferCoordOrigin
 		sub rsp, 16
+		;this looks weird because we're indexing from rsp. i just tried to interperet this mentally having written it months and months ago and was completely brain-fucked. may as well be coding in brain-fuck. we're adding 32 because remember it's stack so we're not reading backwards towards rsp + 24, we're reading forwards to rsp + 32 + 8, and likewise we're reading forwards from rsp + 32 + 8 to rsp + 32 + 16.
 		lea rax, [rsp + 32 + 8]
-		mov [rsp + 32], rax
+		mov qword ptr [rsp + 32], rax
 		call WriteConsoleOutputCharacterA
 		add rsp, 16
+		cmp rax, 0
+		jnz noWriteConsoleCharacterError
+		call DebugBreak
+	noWriteConsoleCharacterError:
 	
-		mov rbx, KEYCODE_MAX
+		mov ecx, KEYCODE_MAX
 	pastKeyLoop:
-		mov rcx, rbx
+		push rcx
 		call GetKey
-		mov rcx, pressedKeys
-		mov byte ptr [rcx + rbx], al
-		cmp rbx, 0
-		dec rbx
-		jnz pastKeyLoop
+		pop rcx
+		mov rdx, qword ptr [pressedKeys]
+		;technically rcx is multiplied by sizeof byte here.
+		mov byte ptr [rdx + rcx - sizeof byte], al
+		loop pastKeyLoop
 
 		lea rcx, pTime
 		call QueryPerformanceCounter
@@ -376,7 +382,7 @@ afterMainLoop:
 	ret
 main endp
 ;;does not give mutual exclusion.
-;allocSize: qword
+;rcx: qword allocation size. returns location of memory block allocated
 MemAlloc proc
 	mov r8, rcx
 	mov rcx, heapHandle
@@ -386,7 +392,7 @@ MemAlloc proc
 	add rsp, 32
 	ret
 MemAlloc endp
-;lpMem: qword
+;rcx: qword location to free.If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. An application can call GetLastError for extended error information.
 MemFree proc
 	mov r8, rcx
 	mov rcx, heapHandle

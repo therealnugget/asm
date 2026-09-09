@@ -7,7 +7,7 @@ KEYCODE_D equ 44h
 KEYCODE_S equ 53h
 KEYCODE_K equ 04bh
 KEYCODE_W equ 57h
-KEYCODE_CONTROL equ 17
+KEYCODE_CONTROL equ 0a2h
 KEYCODE_Q equ 51h
 KEYCODE_E equ 45h
 KEYCODE_RIGHT equ 27h
@@ -20,6 +20,7 @@ KEY_DOWN_BIT_INDEX equ 15
 KEYCODE_MAX equ 176
 
 pressedKeys dq ?
+
 .code
 ;key: dword
 GetKey proc
@@ -32,11 +33,11 @@ GetKey proc
 GetKey endp
 ;key: dword
 GetPastKey proc
-	mov rdx, pressedKeys
+	mov rdx, qword ptr [pressedKeys]
 	mov al, byte ptr [rdx + rcx]
 	ret
 GetPastKey endp
-;key: dword
+;rcx: key, dword
 GetKeyDown proc
 	push rbp
 	mov rbp, rsp
@@ -44,13 +45,13 @@ GetKeyDown proc
 	push rcx
 	call GetKey
 	mov dl, al
-	push rdx
 	pop rcx
+	push rdx
 	call GetPastKey
 	pop rdx
-	;notting the lsb
 	not al
 	and al, dl
+	mov al, dl
 	mov rsp, rbp
 	pop rbp
 	ret
