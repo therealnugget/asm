@@ -51,7 +51,9 @@ cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 ;1/sqrt(2) is 0.70710678
-LightDirection real4 0.0, 0.0, -1.0, 0.0
+LightDirection real4 0.2491364, 0.830455, 0.49827289, 0.0
+LightingOffset real4 0.2
+LightingScale real4 1.3
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
@@ -629,6 +631,9 @@ RasterizeTri proc
 	;iff (p.x(b.y - a.y) + p.y(a.x - b.x) + b.x * a.y - b.y * a.x) > 0, the point is on the right side of the line.
 
 	subss xmm10, one
+	subss xmm9, real4 ptr [rbp - sizeof real4]
+	subss xmm15, real4 ptr [rbp - sizeof real4 * 2]
+	subss xmm11, real4 ptr [rbp - sizeof real4 * 3]
 
 rasterizeYHead:
 	movss xmm1, real4 ptr [rbp - sizeof real4 * 6]
@@ -640,8 +645,8 @@ rasterizeYHead:
 	movss xmm5, xmm1
 	mulss xmm5, xmm14
 
-	insertps xmm10, xmm1, INSERT_0_TO_1
 	addss xmm10, one
+	insertps xmm10, xmm1, INSERT_0_TO_1
 	comiss xmm10, real4 ptr [rbp - sizeof real4 * 5]
 	ja breakRasterizeY
 	addss xmm9, real4 ptr [rbp - sizeof real4]
@@ -716,17 +721,20 @@ rasterizeYHead:
 		vcmpps xmm0, xmm1, xmmword ptr [zeroVec], NOT_EQU_VEC_CMP
 		rcpps xmm1, xmm1
 		pand xmm1, xmm0
-
+		 
 		;latter two xmms are intermediates
 		Vec3NormalizeMacro xmm1, xmm0, xmm2
 		Vector3Dot xmm1, xmmword ptr [LightDirection]
 
+		addss xmm1, LightingOffset
+		mulss xmm1, LightingScale
 		minss xmm1, real4 ptr [MAX_LIGHTING]
 		maxss xmm1, real4 ptr [MIN_LIGHTING]
-		subss xmm1, real4 ptr [MIN_LIGHTING]
-		movss xmm0, real4 ptr [MAX_LIGHTING]
-		subss xmm0, real4 ptr [MIN_LIGHTING]
-		divss xmm1, xmm0
+		;subss xmm1, real4 ptr [MIN_LIGHTING]
+		;movss xmm0, real4 ptr [MAX_LIGHTING]
+		;subss xmm0, real4 ptr [MIN_LIGHTING]
+		;divss xmm1, xmm0
+
 		mulss xmm1, LAST_LIGHTING_CHAR
 
 		movzx rdx, word ptr [charbufferSize]
@@ -840,6 +848,14 @@ endm
 
 LoadPointsAndRasterizeOuter macro xmmInt1, xmmInt2, xmmInt3, ymmInt1, ymmInt2, ymmInt3, vert0Index, vert1Index, vert2Index, xLoc, yLoc, zLoc, intLoc, intLoc2
 
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert0Index]
+	movss real4 ptr [intLoc + sizeof real4 * 0], xmmInt1
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert1Index]
+	movss real4 ptr [intLoc + sizeof real4 * 1], xmmInt1
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert2Index]
+	movss real4 ptr [intLoc + sizeof real4 * 2], xmmInt1
+	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert0Index]
+	movss real4 ptr [intLoc + sizeof real4 * 3], xmmInt1
 	movss xmmInt1, real4 ptr [yLoc + sizeof real4 * vert0Index]
 	movss real4 ptr [intLoc + sizeof real4 * 4], xmmInt1
 	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert1Index]
@@ -848,14 +864,6 @@ LoadPointsAndRasterizeOuter macro xmmInt1, xmmInt2, xmmInt3, ymmInt1, ymmInt2, y
 	movss real4 ptr [intLoc + sizeof real4 * 6], xmmInt1
 	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert2Index]
 	movss real4 ptr [intLoc + sizeof real4 * 7], xmmInt1
-	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert0Index]
-	movss real4 ptr [intLoc + sizeof real4 * 3], xmmInt1
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert0Index]
-	movss real4 ptr [intLoc], xmmInt1
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert1Index]
-	movss real4 ptr [intLoc + sizeof real4 * 1], xmmInt1
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert2Index]
-	movss real4 ptr [intLoc + sizeof real4 * 2], xmmInt1
 
 	vmovups ymmInt3, ymmword ptr [intLoc]
 	;ymmInt3: (xW3, yW2, xW2, yW1, xW1, z3, z2, z1)
