@@ -51,7 +51,7 @@ cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 ;1/sqrt(2) is 0.70710678
-LightDirection real4 0.2491364, 0.830455, 0.49827289, 0.0
+LightDirection real4 0.3, 1.0, 1.6, 0.0
 LightingOffset real4 1.0
 LightingScale real4 0.5
 SingleDefVec verticesZOffset, -2.0
@@ -439,9 +439,9 @@ CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, zLocation, yLocat
 	movss real4 ptr [cumuLocY], xmmIntermediate2
 	
 	insertps xmmIntermediate2, xmmIntermediate, INSERT_2_TO_0
-	vcmpss xmmArea, xmmIntermediate2, real4 ptr [zeroVec], NEQU_VEC_CMP_SS
+	vcmpss xmmIntermediate, xmmIntermediate2, real4 ptr [zeroVec], NEQU_VEC_CMP_SS
 	rcpss xmmIntermediate2, xmmIntermediate2
-	pand xmmIntermediate2, xmmArea
+	pand xmmIntermediate2, xmmIntermediate
 	mulss xmmIntermediate2, xmmArea
 	addss xmmIntermediate2, real4 ptr [cumuLocZ]
 	movss real4 ptr [cumuLocZ], xmmIntermediate2
@@ -651,6 +651,10 @@ rasterizeYHead:
 	movss xmm5, xmm1
 	mulss xmm5, xmm14
 
+	subss xmm3, xmm12
+	subss xmm4, xmm13
+	subss xmm5, xmm14
+
 	addss xmm10, one
 	insertps xmm10, xmm1, INSERT_0_TO_1
 	comiss xmm10, real4 ptr [rbp - sizeof real4 * 5]
@@ -686,12 +690,12 @@ rasterizeYHead:
 		or bl, dl
 		test bl, 1
 		jnz skipRender
+		
+		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, xmm2, rasterizeXHead, efLbl1
 
-		ProcessX xmm3, xmm9, xmm1, xmm10, xmm6, xmm0, rasterizeXHead, efLbl1
+		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, xmm0, rasterizeXHead, efLbl2
 
-		ProcessX xmm4, xmm15, xmm1, xmm10, xmm7, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], rasterizeXHead, efLbl2
-
-		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, xmm2, rasterizeXHead, efLbl3
+		ProcessX xmm5, xmm11, xmm1, xmm10, xmm8, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], rasterizeXHead, efLbl3
 
 		movss xmm1, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
 		addss xmm1, xmm0
@@ -699,18 +703,22 @@ rasterizeYHead:
 		movd edx, xmm1
 		test edx, -1
 		jz skipRender
-		rcpss xmm1, xmm1
-
 		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5], xmm3
+		;rcpss xmm1, xmm1
+		movss xmm3, xmm1
+		movss xmm1, real4 ptr [one]
+		divss xmm1, xmm3
+
 		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
 		mulss xmm3, xmm1
 		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], xmm3
 		mulss xmm0, xmm1
 		mulss xmm2, xmm1
 
-		mov dword ptr [rbp - 72], 0
-		mov dword ptr [rbp - 76], 0
-		mov dword ptr [rbp - 80], 0
+		movss xmm1, real4 ptr [zero]
+		movss real4 ptr [rbp - 72], xmm1
+		movss real4 ptr [rbp - 76], xmm1
+		movss real4 ptr [rbp - 80], xmm1
 		;had to use rbp - 72 here otherwise the line is too long and the compiler can't handle it, but it's rbp - sizeof real4 * 9 - sizeof ymmword - sizeof real4 * 2
 		;rbp - 76 is rbp - sizeof real4 * 9 - sizeof ymmword - sizeof real4 * 3, and so on.
 		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3, rbp - 72, rbp - 76, rbp - 80
@@ -719,20 +727,21 @@ rasterizeYHead:
 		CalcLighting xmm0, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6, RASTERIZE_X_LOC_1, rbp - 72, rbp - 76, rbp - 80
 		RASTERIZE_Y_LOC_2 equ rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1
 		CalcLighting xmm2, xmm3, xmm1, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2, RASTERIZE_Y_LOC_2, rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7, rbp - 72, rbp - 76, rbp - 80
-		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
 
 		movss xmm0, real4 ptr [rbp - 80]
-		movss xmm1, xmm0
-		vcmpss xmm2, xmm0, real4 ptr [zeroVec], NEQU_VEC_CMP_SS
-		rcpss xmm1, xmm1
-		movss xmm1, real4 ptr [rbp - 72]
+		vcmpss xmm2, xmm0, real4 ptr [zero], NEQU_VEC_CMP_SS
+		vcmpss xmm3, xmm0, real4 ptr [NanVec], NEQU_VEC_CMP_SS
+		por xmm2, xmm3
+		rcpss xmm1, xmm0
+		pand xmm1, xmm2
+		insertps xmm1, xmm1, INSERT_0_TO_2
+		insertps xmm1, real4 ptr [rbp - 72], INSERT_0_TO_0
 		insertps xmm1, real4 ptr [rbp - 76], INSERT_0_TO_1
-		insertps xmm1, xmm0, INSERT_0_TO_2
-		pand xmm1, xmm0
 
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
 
-		;latter two xmms are intermediates
-		Vec3NormalizeMacro xmm1, xmm0, xmm2
+		;latter xmm is intermediate
+		Vec3NormalizeMacro xmm1, xmm0
 		Vector3Dot xmm1, xmmword ptr [LightDirection]
 
 		addss xmm1, LightingOffset
@@ -1096,29 +1105,29 @@ RenderCubeLoc proc
 	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
 
 	;this can be expanded out to insert instructions for the lower xmm word instead of memory to memory to improve performance
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 2, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 5, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 2, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 5, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
 	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 7, 4, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
 	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 3, 4, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 4, 5, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 0, 4, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 7, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 3, 2, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 5, 4, 7, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 7, 6, 5, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 2, 3, 0, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ;ymmword * 9, rbp - sizeof ymmword * 6
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 1, 2, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 4, 5, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 0, 4, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 7, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 3, 2, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 5, 4, 7, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 7, 6, 5, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 2, 3, 0, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 1, 2, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
 	
 	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
 	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]

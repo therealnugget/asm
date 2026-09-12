@@ -13,7 +13,7 @@ SHUFFLE_CROSS_Y_1 equ 210
 INSERT_W_TO_X equ 0c0h
 INSERT_W_TO_W equ 0f0h
 INSERT_X_TO_W equ 30h
-NEQU_VEC_CMP_SS equ 3h
+NEQU_VEC_CMP_SS equ 4h
 EQU_VEC_CMP_SS equ 0h
 LESS_EQU_VEC_CMP equ 2h
 LESS_VEC_CMP equ 1h
@@ -281,21 +281,17 @@ QuatAxis endp
 Vec3Normalize proc
 	movaps xmm1, xmm0
 	Vector3Dot xmm0, xmm0
-	vcmpss xmm3, xmm0, zero, GREATER_VEC_CMP
 	rsqrtss xmm0, xmm0
-	pand xmm0, xmm3
 	vbroadcastss xmm0, xmm0
 	mulps xmm0, xmm1
 	ret
 Vec3Normalize endp
 
 ;normalizes xmmVec as a vector3. xmmInt1 and xmmInt2 are intermediate xmm registers.
-Vec3NormalizeMacro macro xmmVec, xmmInt1, xmmInt2
+Vec3NormalizeMacro macro xmmVec, xmmInt1
 	movaps xmmInt1, xmmVec
 	Vector3Dot xmmVec, xmmVec
-	vcmpss xmmInt2, xmmVec, zero, GREATER_VEC_CMP
 	rsqrtss xmmVec, xmmVec
-	pand xmmVec, xmmInt2
 	vbroadcastss xmmVec, xmmVec
 	mulps xmmVec, xmmInt1
 endm

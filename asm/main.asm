@@ -210,6 +210,10 @@ main proc
 
 	;the sizeof xmmword is to calculate the cube's position rotation for the x axis, so that when that of the y is calculated, the x can be loaded back in before the quaternions are multiplied.
 	sub rsp, (16 + 32)
+
+	movups xmm0, xmmword ptr [LightDirection]
+	Vec3NormalizeMacro xmm0, xmm1
+	movups xmmword ptr [LightDirection], xmm0
 	
 	call GetProcessHeap
 	mov heapHandle, rax
