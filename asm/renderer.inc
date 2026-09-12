@@ -63,8 +63,8 @@ PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
-;LIGHTING_CHARS db '@', '%', '&', '$', '#', '*', '+', '!', ',', '.', '`'
-LIGHTING_CHARS db '`', '.', ',', '!', '+', '*', '#', '$', '&', '%', '@'
+;LIGHTING_CHARS db '@', '%', '&', '$', '#', '*', '+', ',', '!', '.', '`'
+LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
 LAST_LIGHTING_CHAR real4 10.0
 MAX_LIGHTING real4 1.0
 MIN_LIGHTING real4 0.0
@@ -86,6 +86,35 @@ ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
 	
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4];now x vertex is in xmm1, y vertex is in xmm1 + sizeof real4, and z vertex is in xmm1 + sizeof real4 * 2, last real4 part is dummy memory.
 endm
+
+;rcx: the location of the vector to rotate
+RotateVecByInput proc
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof xmmword
+	push rcx
+
+	mov al, rotationX
+	movups xmm0, xmmword ptr [XAxis]
+	call QuatAngleAxis
+	movups xmmword ptr [rbp - sizeof xmmword], xmm0
+	
+	mov al, rotationY
+	movups xmm0, xmmword ptr [YAxis]
+	call QuatAngleAxis
+	movups xmm1, xmmword ptr [rbp - sizeof xmmword]
+	call QuatMult
+	
+	pop rcx
+	
+	movups xmm1, xmmword ptr [rcx]
+	call QuatMultVec
+	movups xmmword ptr [rcx], xmm0
+	
+	mov rsp, rbp
+	pop rbp
+	ret
+RotateVecByInput endp
 
 RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 

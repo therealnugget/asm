@@ -101,7 +101,7 @@ SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
 moveSpeed real4 10.0
-rotationSpeed real4 340.0
+rotationSpeed real4 400.0
 timerQuadpartSecondDivisor real4 1000000.0
 frequency LARGE_INTEGER {{?, ?}}
 pTime LARGE_INTEGER {{?, ?}}
@@ -337,6 +337,8 @@ mainLoopHead:
 		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY
 		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX
 
+		lea rcx, LightDirection
+		call RotateVecByInput
 
 		vmovups ymm0, ymmword ptr [cameraInputX]
 		vmovups ymm1, ymmword ptr [cameraInputY]
