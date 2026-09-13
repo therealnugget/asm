@@ -17,7 +17,7 @@ KEYCODE_DOWN equ 28h
 ;				   0b1000 0000 0000 0000
 KEY_DOWN_STATE equ 8000h
 KEY_DOWN_BIT_INDEX equ 15
-KEYCODE_MAX equ 176
+KEYCODE_MAX equ 256
 
 pressedKeys dq ?
 
@@ -31,6 +31,15 @@ GetKey proc
 	shr eax, KEY_DOWN_BIT_INDEX
 	ret
 GetKey endp
+HeldKey proc
+	sub rsp, 20h
+	call GetPastKey
+	mov bl, al
+	call GetKey
+	add rsp, 20h
+	and al, bl
+	ret
+HeldKey endp
 ;key: dword
 GetPastKey proc
 	mov rdx, qword ptr [pressedKeys]
@@ -42,16 +51,13 @@ GetKeyDown proc
 	push rbp
 	mov rbp, rsp
 	sub rsp, 32
-	push rcx
+	mov r12, rcx
 	call GetKey
-	mov dl, al
-	pop rcx
-	push rdx
+	mov bl, al
+	mov rcx, r12
 	call GetPastKey
-	pop rdx
 	not al
-	and al, dl
-	mov al, dl
+	and al, bl
 	mov rsp, rbp
 	pop rbp
 	ret

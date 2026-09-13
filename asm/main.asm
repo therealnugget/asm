@@ -284,6 +284,12 @@ noConsoleWindowInfoError:
 	mov rcx, KEYCODE_MAX
 	call MemAlloc
 	mov qword ptr [pressedKeys], rax
+	mov ecx, KEYCODE_MAX
+clearPastKeyLoop:
+		mov rdx, qword ptr [pressedKeys]
+		;technically rcx is multiplied by sizeof byte here.
+		mov byte ptr [rdx + rcx - sizeof byte], 0
+	loop clearPastKeyLoop
 
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
 	vmovups ymm5, ymmword ptr [cubeVerticesY]
@@ -305,15 +311,14 @@ noConsoleWindowInfoError:
 	call QueryPerformanceCounter
 
 mainLoopHead:
-		
+
 		mov ecx, KEYCODE_CONTROL
-		call GetKey
+		call HeldKey
 		mov bl, al
-		push rbx
 		mov ecx, KEYCODE_Q
 		call GetKeyDown
-		pop rbx
 		and al, bl
+		test al, 1
 		jnz afterMainLoop
 
 		mov rax, charBuffer
@@ -362,12 +367,13 @@ mainLoopHead:
 	
 		mov ecx, KEYCODE_MAX
 	pastKeyLoop:
-		push rcx
+		mov ebx, ecx
 		call GetKey
-		pop rcx
+		mov ecx, ebx
 		mov rdx, qword ptr [pressedKeys]
 		;technically rcx is multiplied by sizeof byte here.
 		mov byte ptr [rdx + rcx - sizeof byte], al
+
 		loop pastKeyLoop
 
 		lea rcx, pTime

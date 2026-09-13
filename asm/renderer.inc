@@ -1,7 +1,7 @@
 ifndef renderer
 renderer equ 1
 draw_vertices equ 1
-draw_lines equ 0
+draw_lines equ 1
 .data
 ;minimum float value AS an integer
 FLT_MIN_I equ -26172378
@@ -52,8 +52,8 @@ cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
 cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 ;1/sqrt(2) is 0.70710678
 LightDirection real4 0.3, 1.0, 1.6, 0.0
-LightingOffset real4 1.0
-LightingScale real4 0.5
+LightingOffset real4 1.2
+LightingScale real4 0.55
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
