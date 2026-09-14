@@ -90,10 +90,24 @@ LARGE_INTEGER union
 	QuadPart dq ?
 LARGE_INTEGER ends
 
+Cube struct
+	xVert real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
+	yVert real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
+	zVert real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
+
+	;TODO: implement local rotation and position
+	rotation real4 0.0
+	position real4 0.0, 0.0, 0.0, 0.0
+
+	color dw FOREGROUND_INTENSITY
+Cube ends
+
+cubes dq ?
 charBuffer dq ?
 stdOutHandle dq ?
 heapHandle dq ?
-charBufferMaxVal SMALL_RECT {?, ?, ?, ?}
+;the origin of the screen (i.e. the coordinates of the upper-leftmost cell in the buffer) is stored in the first two words of charBufferMaxVal.
+charBufferMaxVal SMALL_RECT {0, 0, ?, ?}
 charBufferLen dd ?
 maxCharValue dd ?
 SingleDefVec cubeScaleVec, 1.0
@@ -110,7 +124,6 @@ XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
 charBufferSize COORD {?, ?}
-bufferCoordOrigin COORD {0, 0}
 .code
 
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in xmm0, multiplies by moveSpeed then broadcasts to ymmReg
@@ -209,7 +222,7 @@ main proc
 	mov rbp, rsp
 
 	;the sizeof xmmword is to calculate the cube's position rotation for the x axis, so that when that of the y is calculated, the x can be loaded back in before the quaternions are multiplied.
-	sub rsp, (16 + 32)
+	sub rsp, 32 + 16
 
 	movups xmm0, xmmword ptr [LightDirection]
 	Vec3NormalizeMacro xmm0, xmm1
@@ -243,15 +256,26 @@ noStdHandleError:
 
 	xor eax, eax
 	mov ax, charBufferSize.X
+
 	mov cx, charBufferSize.Y
 	mul cx
 	mov charBufferLen, eax
 	dec eax
 	mov maxCharValue, eax
+	mov ebx, eax
 
-	mov ecx, eax
+	mov ecx, sizeof CHAR_INFO
+	mul ecx
+	mov rcx, rax
 	call MemAlloc
 	mov charBuffer, rax
+
+	mov eax, ebx
+	mov ecx, sizeof word
+	mul ecx
+	mov ecx, eax
+	call MemAlloc
+	mov qword ptr [zBuffer], rax
 
 	mov ax, charBufferSize.X
 	dec ax
@@ -287,8 +311,7 @@ noConsoleWindowInfoError:
 	mov ecx, KEYCODE_MAX
 clearPastKeyLoop:
 		mov rdx, qword ptr [pressedKeys]
-		;technically rcx is multiplied by sizeof byte here.
-		mov byte ptr [rdx + rcx - sizeof byte], 0
+		mov byte ptr [rdx + rcx * sizeof byte - sizeof byte], 0
 	loop clearPastKeyLoop
 
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
@@ -313,7 +336,7 @@ clearPastKeyLoop:
 mainLoopHead:
 
 		mov ecx, KEYCODE_CONTROL
-		call HeldKey
+		call GetKey
 		mov bl, al
 		mov ecx, KEYCODE_Q
 		call GetKeyDown
@@ -321,13 +344,14 @@ mainLoopHead:
 		test al, 1
 		jnz afterMainLoop
 
-		mov rax, charBuffer
-		mov ecx, charBufferLen
-		xor rdx, rdx
+		mov rax, qword ptr [charBuffer]
+		mov ecx, dword ptr [maxCharValue]
 		mov dl, "'"
 
 	charAssignHead:
-		mov byte ptr [rax + rcx * sizeof byte - sizeof byte], dl
+		;we're saying move a byte of a comma value into char buffer location + (length of char buffer - 1) * size of char info
+		mov byte ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO], dl
+		mov word ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO + sizeof word], FOREGROUND_INTENSITY
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
@@ -348,22 +372,23 @@ mainLoopHead:
 		vmovups ymm0, ymmword ptr [cameraInputX]
 		vmovups ymm1, ymmword ptr [cameraInputY]
 		vmovups ymm2, ymmword ptr [cameraInputZ]
+		mov word ptr [rsp + 32], FOREGROUND_BLUE
 		call RenderCubeLoc
 
 		mov rcx, stdOutHandle
-		mov rdx, charBuffer
-		mov r8d, charBufferLen
-		mov r9d, bufferCoordOrigin
-		sub rsp, 16
+		mov rdx, qword ptr [charBuffer]
+		mov r8d, COORD ptr [charBufferSize]
+		mov r9d, COORD ptr [charBufferMaxVal]
 		;this looks weird because we're indexing from rsp. i just tried to interperet this mentally having written it months and months ago and was completely brain-fucked. may as well be coding in brain-fuck. we're adding 32 because remember it's stack so we're not reading backwards towards rsp + 24, we're reading forwards to rsp + 32 + 8, and likewise we're reading forwards from rsp + 32 + 8 to rsp + 32 + 16.
+		mov rax, SMALL_RECT ptr [charBufferMaxVal]
+		mov SMALL_RECT ptr [rsp + 32 + 8], rax
 		lea rax, [rsp + 32 + 8]
 		mov qword ptr [rsp + 32], rax
-		call WriteConsoleOutputCharacterA
-		add rsp, 16
+		call WriteConsoleOutputA
 		cmp rax, 0
-		jnz noWriteConsoleCharacterError
-		call DebugBreak
-	noWriteConsoleCharacterError:
+		jz noWriteConsoleError
+		call GetLastError
+	noWriteConsoleError:
 	
 		mov ecx, KEYCODE_MAX
 	pastKeyLoop:
@@ -371,8 +396,7 @@ mainLoopHead:
 		call GetKey
 		mov ecx, ebx
 		mov rdx, qword ptr [pressedKeys]
-		;technically rcx is multiplied by sizeof byte here.
-		mov byte ptr [rdx + rcx - sizeof byte], al
+		mov byte ptr [rdx + rcx * sizeof byte - sizeof byte], al
 
 		loop pastKeyLoop
 

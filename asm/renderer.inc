@@ -19,6 +19,23 @@ DESTROY_HIGH_WORD equ 0ffffh
 ADD_HIGH_WORD equ 0ffff0000h
 SIGN_BIT_WORD equ 8000h
 
+FOREGROUND_NEUTRAL equ 0h
+FOREGROUND_BLUE equ 1h
+FOREGROUND_GREEN equ 2h
+FOREGROUND_RED equ 4h
+FOREGROUND_INTENSITY equ 8h
+BACKGROUND_BLUE equ 10h
+BACKGROUND_GREEN equ 20h
+BACKGROUND_RED equ 40h
+BACKGROUND_INTENSITY equ 80h
+COMMON_LVB_LEADING_BYTE equ 100h
+COMMON_LVB_TRAILING_BYTE equ 200h
+COMMON_LVB_GRID_HORIZONTAL equ 400h
+COMMON_LVB_GRID_LVERTICAL equ 800h
+COMMON_LVB_GRID_RVERTICAL equ 1000h
+COMMON_LVB_REVERSE_VIDEO equ 4000h
+COMMON_LVB_UNDERSCORE equ 8000h
+
 HALF_ROTATION equ 127
 
 INSERT_0 equ 0
@@ -63,6 +80,7 @@ PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 rotationX db 0
 rotationY db 0
+zBuffer dq ?
 ;LIGHTING_CHARS db '@', '%', '&', '$', '#', '*', '+', ',', '!', '.', '`'
 LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
 LAST_LIGHTING_CHAR real4 10.0
@@ -393,11 +411,15 @@ lineRenderLHLbl:
 
 		test dl, 1
 		jnz noRenderLbl
-		xor edx, edx
+		;ebx is still holding the horizontal char buffer size
 		mul ebx
 		add eax, ecx
-		add rax, charBuffer
+		mov edx, sizeof CHAR_INFO
+		mul edx
+		add rax, qword ptr [charBuffer]
 		mov byte ptr [rax], 'o'
+		mov dx, word ptr [rbp + 32 + 8 + 8]
+		mov word ptr [rax + sizeof word], dx
 	noRenderLbl:
 
 		psubd xmm10, xmm7
@@ -479,6 +501,7 @@ endm
 
 ;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
 ;ymm2:  (xW3, yW2, xW2, yW1, xW1, z3, z2, z1), (where xWorld3 is the lowest real4)
+;stack param #1: color of triangle
 RasterizeTri proc
 	push rbp
 	mov rbp, rsp
@@ -709,11 +732,11 @@ rasterizeYHead:
 		setl dl
 		or bl, dl
 		;REMEMBER xmm10 is y, x NOT x, y
-		movzx rdx, word ptr [charBufferSize + sizeof word]
+		movzx rdx, charBufferMaxVal.Bottom
 		cmp rax, rdx
 		setge dl
 		or bl, dl
-		movzx rdx, word ptr [charBufferSize]
+		movzx rdx, charBufferMaxVal.Right
 		cmp rcx, rdx
 		setge dl
 		or bl, dl
@@ -787,12 +810,17 @@ rasterizeYHead:
 		movzx rdx, word ptr [charbufferSize]
 		mul rdx
 		add rax, rcx
+		mov rcx, sizeof CHAR_INFO
+		mul rcx
 		add rax, qword ptr [charBuffer]
 		cvtss2si rdx, xmm1
 		lea rcx, LIGHTING_CHARS
 		add rdx, rcx
 		mov dl, byte ptr [rdx]
 		mov byte ptr [rax], dl
+		;add 8 for return address and 8 for original value of rbp
+		mov dx, word ptr [rbp + 32 + 8 + 8]
+		mov word ptr [rax + sizeof word], dx
 		
 	skipRender:
 		;xmm10: y, x
@@ -928,7 +956,7 @@ RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 endm
 
 ;;renders a cube at some location
-;;ymm0: input x, ymm1: input y, ymm2: input z
+;;ymm0: input x, ymm1: input y, ymm2: input z, stack param #2: data of cube (Cube struct)
 RenderCubeLoc proc
 	vmovups ymm4, ymmword ptr [cubeVerticesX]
 	vmovups ymm5, ymmword ptr [cubeVerticesY]
@@ -1059,6 +1087,10 @@ RenderCubeLoc proc
 	vhsubps xmm6, xmm6, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in y
 
 	cvtss2si ebx, xmm2
+
+	;add 8 for return address and 8 for original value of rbp
+	mov ax, word ptr [rbp + 32 + 8 + 8]
+	mov word ptr [rsp + 32], ax
 
 	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1
 	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2
@@ -1213,10 +1245,21 @@ renderCharHead:
 		mov rbx, qword ptr [charBuffer]
 		movzx ebx, byte ptr [rbx]
 		cmovl eax, ebx
-		mov bl, '0';TODO: not working
+		mov bl, '0'
 		cmovge eax, ebx
+		
+		mov r8d, eax
+		mov eax, edx
+		mov r9d, sizeof CHAR_INFO
+		mul r9d
+		mov edx, eax
+		mov eax, r8d
+
 		add rdx, qword ptr [charBuffer];HEEEY FUTURE ME when you get a chance read through 3.9 - 4 of the architecture manual
 		mov byte ptr [rdx], al
+		;color
+		mov ax, word ptr [rbp + 32 + 8 + 8]
+		mov word ptr [rdx + sizeof word], ax
 	loop renderCharHead
 	
 	endif

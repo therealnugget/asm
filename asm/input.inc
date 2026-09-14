@@ -51,6 +51,7 @@ GetKeyDown proc
 	push rbp
 	mov rbp, rsp
 	sub rsp, 32
+	push rbx
 	mov r12, rcx
 	call GetKey
 	mov bl, al
@@ -58,6 +59,7 @@ GetKeyDown proc
 	call GetPastKey
 	not al
 	and al, bl
+	pop rbx
 	mov rsp, rbp
 	pop rbp
 	ret
