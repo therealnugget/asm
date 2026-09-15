@@ -1,6 +1,6 @@
 ifndef renderer
 renderer equ 1
-draw_vertices equ 1
+draw_vertices equ 0
 draw_lines equ 1
 .data
 ;minimum float value AS an integer
@@ -499,7 +499,16 @@ CalcLighting macro xmmArea, xmmIntermediate, xmmIntermediate2, zLocation, yLocat
 
 endm
 
-;rcx: the first two triangle vertices (x1, y1, x2, y2), edx: the last triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
+ClampToScreenBounds macro xmmClamp, xmmInt1, maxScreen
+	movzx xmmInt1, word ptr [maxScreen]
+	cmp xmmClamp, xmmInt1
+	cmovg xmmClamp, xmmInt1
+	xor xmmInt1, xmmInt1
+	cmp xmmClamp, xmmInt1
+	cmovl xmmClamp, xmmInt1
+endm
+
+;rcx: the first two screen triangle vertices (x1, y1, x2, y2), edx: the last screen triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
 ;ymm2:  (xW3, yW2, xW2, yW1, xW1, z3, z2, z1), (where xWorld3 is the lowest real4)
 ;stack param #1: color of triangle
 RasterizeTri proc
@@ -573,18 +582,26 @@ RasterizeTri proc
 	cmp r11w, r9w
 	;r11d: min y
 	cmovg r11d, r9d
-	mov dword ptr [rbp - MAX_RASTERIZE_REAL4_LOC], r11d
+	ClampToScreenBounds r11d, r14d, charBufferMaxVal.Bottom
+
 	cvtsi2ss xmm6, r11d
 	;min y @ rbp - sizeof real4 * 7
 	movss real4 ptr [rbp - sizeof real4 * 7], xmm6
+	comiss xmm6, xmm6
+	jne endOfRasterFunc
+
 	cmp r12w, r9w
 	;r12d: max y
 	cmovl r12d, r9d
-	cmp r12d, dword ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
-	je endOfRasterFunc
+	ClampToScreenBounds r12d, r14d, charBufferMaxVal.Bottom
+
+	cmp r12d, r11d
+	jle endOfRasterFunc
 	;max y @ rbp - sizeof real4 * 5
 	cvtsi2ss xmm6, r12d
 	movss real4 ptr [rbp - sizeof real4 * 5], xmm6
+	comiss xmm6, xmm6
+	jne endOfRasterFunc
 
 	shr rdx, NUM_BITS_IN_WORD
 	mov r9w, dx;	x3
@@ -598,18 +615,26 @@ RasterizeTri proc
 	cmp r8w, r9w
 	;r8d: min x
 	cmovg r8d, r9d
-	mov dword ptr [rbp - MAX_RASTERIZE_REAL4_LOC], r8d
+	ClampToScreenBounds r8d, r14d, charBufferMaxVal.Right
+
 	cvtsi2ss xmm6, r8d
 	;min x @ rbp - sizeof real4 * 6
 	movss real4 ptr [rbp - sizeof real4 * 6], xmm6
+	comiss xmm6, xmm6
+	jne endOfRasterFunc
+
 	cmp r13w, r9w
 	;r13d: max x
 	cmovl r13d, r9d
-	cmp r13d, dword ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
-	je endOfRasterFunc
+	ClampToScreenBounds r13d, r14d, charBufferMaxVal.Right
+
+	cmp r13d, r8d
+	jle endOfRasterFunc
 	;max x @ rbp - sizeof real4 * 4
 	cvtsi2ss xmm6, r13d
 	movss real4 ptr [rbp - sizeof real4 * 4], xmm6
+	comiss xmm6, xmm6
+	jne endOfRasterFunc
 
 	;xmm0: (x1, y1)
 	;xmm1: (x2, y2)
@@ -734,11 +759,11 @@ rasterizeYHead:
 		;REMEMBER xmm10 is y, x NOT x, y
 		movzx rdx, charBufferMaxVal.Bottom
 		cmp rax, rdx
-		setge dl
+		setg dl
 		or bl, dl
 		movzx rdx, charBufferMaxVal.Right
 		cmp rcx, rdx
-		setge dl
+		setg dl
 		or bl, dl
 		test bl, 1
 		jnz skipRender
@@ -786,6 +811,20 @@ rasterizeYHead:
 		por xmm2, xmm3
 		rcpss xmm1, xmm0
 		pand xmm1, xmm2
+		vcmpps xmm3, xmm1, xmmword ptr [zeroVec], GREATER_VEC_CMP
+		movd edx, xmm3
+		test edx, -1
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
+		jnz skipRender
+		extractps edx, xmm3, INSERT_1
+		test edx, -1
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
+		jnz skipRender
+		extractps edx, xmm3, INSERT_2
+		test edx, -1
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
+		jnz skipRender
+
 		insertps xmm1, xmm1, INSERT_0_TO_2
 		insertps xmm1, real4 ptr [rbp - 72], INSERT_0_TO_0
 		insertps xmm1, real4 ptr [rbp - 76], INSERT_0_TO_1
@@ -1010,14 +1049,14 @@ RenderCubeLoc proc
 	vpxor ymm7, ymm7, ymm7
 	vcmpps ymm7, ymm6, ymm7, GREATER_VEC_CMP; z more than zero ==> not visible to player
 
+	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm4
+	vmovups ymmword ptr [rbp - sizeof ymmword * 8], ymm5
+
 	;;vpxor ymm8, ymm8, ymmword ptr [NanVec]
 	;;vpand ymm4, ymm4, ymm8
 	;;vpand ymm5, ymm5, ymm8
 	vpor ymm4, ymm4, ymm7
 	vpor ymm5, ymm5, ymm7
-
-	vmovups ymmword ptr [rbp - sizeof ymmword * 7], ymm4
-	vmovups ymmword ptr [rbp - sizeof ymmword * 8], ymm5
 
 	vdivps ymm4, ymm4, ymm6
 	vdivps ymm5, ymm5, ymm6

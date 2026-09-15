@@ -385,10 +385,6 @@ mainLoopHead:
 		lea rax, [rsp + 32 + 8]
 		mov qword ptr [rsp + 32], rax
 		call WriteConsoleOutputA
-		cmp rax, 0
-		jz noWriteConsoleError
-		call GetLastError
-	noWriteConsoleError:
 	
 		mov ecx, KEYCODE_MAX
 	pastKeyLoop:
