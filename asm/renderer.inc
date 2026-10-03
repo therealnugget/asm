@@ -1,10 +1,12 @@
 ifndef renderer
 renderer equ 1
-draw_vertices equ 0
+draw_vertices equ 1
 draw_lines equ 1
+draw_faces equ 1
 .data
 ;minimum float value AS an integer
 FLT_MIN_I equ -26172378
+FLT_MAX_I equ 2139095039
 ;minimum doubleword value AS a quadword
 I32_MIN_Q equ 2147483648
 ;minimum doubleword value AS a doubleword
@@ -18,6 +20,7 @@ SHUFFLE_CROSS_X_Y equ 1
 DESTROY_HIGH_WORD equ 0ffffh
 ADD_HIGH_WORD equ 0ffff0000h
 SIGN_BIT_WORD equ 8000h
+CUBE_INDEX_BUFFER_NUM_TRI equ 6 * 2
 
 FOREGROUND_NEUTRAL equ 0h
 FOREGROUND_BLUE equ 1h
@@ -64,13 +67,8 @@ INSERT_3_TO_2 equ 0e0h
 
 ;default cube veritces
 align 16
-cubeVerticesX real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
-cubeVerticesY real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
-cubeVerticesZ real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
-;1/sqrt(2) is 0.70710678
 LightDirection real4 0.3, 1.0, 1.6, 0.0
-LightingOffset real4 1.2
-LightingScale real4 0.55
+CameraDirection real4 0.0, 0.0, -1.0, 0.0
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
@@ -78,6 +76,20 @@ ONE_AT_1 real4 0.0, 1.0, 0.0, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
+CubeFaceIndexBuffer db 6, 2, 1
+					db 1, 5, 6
+					db 7, 4, 3
+					db 0, 3, 4
+					db 4, 5, 1
+					db 1, 0, 4
+					db 6, 7, 3
+					db 3, 2, 6
+					db 5, 4, 7
+					db 7, 6, 5
+					db 2, 3, 0
+					db 0, 1, 2
+LightingOffset real4 1.2
+LightingScale real4 0.55
 rotationX db 0
 rotationY db 0
 zBuffer dq ?
@@ -418,7 +430,9 @@ lineRenderLHLbl:
 		mul edx
 		add rax, qword ptr [charBuffer]
 		mov byte ptr [rax], 'o'
-		mov dx, word ptr [rbp + 32 + 8 + 8]
+		;color is stored here because THIS IS A MACRO, NOT A FUNCTION
+		mov rcx, qword ptr [CUBE_DATA_PARAM_LOC]
+		mov dx, word ptr (Cube ptr [rcx]).color
 		mov word ptr [rax + sizeof word], dx
 	noRenderLbl:
 
@@ -780,12 +794,9 @@ rasterizeYHead:
 		movd edx, xmm1
 		test edx, -1
 		jz skipRender
-		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5], xmm3
-		;rcpss xmm1, xmm1
-		movss xmm3, xmm1
-		movss xmm1, real4 ptr [one]
-		divss xmm1, xmm3
+		rcpss xmm1, xmm1
 
+		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5], xmm3
 		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC]
 		mulss xmm3, xmm1
 		movss real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC], xmm3
@@ -810,6 +821,7 @@ rasterizeYHead:
 		vcmpss xmm3, xmm0, real4 ptr [NanVec], NEQU_VEC_CMP_SS
 		por xmm2, xmm3
 		rcpss xmm1, xmm0
+		movss real4 ptr [rbp - 80], xmm1
 		pand xmm1, xmm2
 		vcmpps xmm3, xmm1, xmmword ptr [zeroVec], GREATER_VEC_CMP
 		movd edx, xmm3
@@ -851,14 +863,33 @@ rasterizeYHead:
 		add rax, rcx
 		mov rcx, sizeof CHAR_INFO
 		mul rcx
+		mov rbx, rax
 		add rax, qword ptr [charBuffer]
+		add rbx, qword ptr [zBuffer]
 		cvtss2si rdx, xmm1
 		lea rcx, LIGHTING_CHARS
 		add rdx, rcx
-		mov dl, byte ptr [rdx]
+
+		movss xmm1, real4 ptr [rbp - 80]
+
+		movss xmm0, real4 ptr [rbx]
+		comiss xmm0, xmm1
+		movzx rcx, byte ptr [rdx]
+		;we reverse the conditions of the z buffer because we define things in front of the camera as having a -ve z
+		cmovge rdx, rcx
+		movzx rcx, byte ptr [rax]
+		cmovl rdx, rcx
+		;current z buffer value @ rbx
+		movd ecx, xmm1
+		cmovl r8d, ecx
+		cmovge r8d, real4 ptr [rbx]
+		mov dword ptr [rbx], r8d
+
 		mov byte ptr [rax], dl
 		;add 8 for return address and 8 for original value of rbp
 		mov dx, word ptr [rbp + 32 + 8 + 8]
+		movzx r8d, word ptr [rax + sizeof word]
+		cmovl edx, r8d
 		mov word ptr [rax + sizeof word], dx
 		
 	skipRender:
@@ -960,34 +991,63 @@ LoadPointsAndRasterize macro xmmReg1, xmmReg2, xmmReg3, intGpr1, intGpr2, intGpr
 	call RasterizeTri
 endm
 
-LoadPointsAndRasterizeOuter macro xmmInt1, xmmInt2, xmmInt3, ymmInt1, ymmInt2, ymmInt3, vert0Index, vert1Index, vert2Index, xLoc, yLoc, zLoc, intLoc, intLoc2
+LoadPointsAndRasterizeOuter macro xmmInt1, xmmInt2, xmmInt3, ymmInt1, ymmInt2, ymmInt3, intGpr1, intGpr2, intGpr3, intGprD1, intGprD2, intGprD3, intGpr4, xLoc, yLoc, zLoc, intLoc, intLoc2, faceOffset
 
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert0Index]
+	lea intGpr4, CubeFaceIndexBuffer
+	movzx intGpr1, byte ptr [intGpr4 + sizeof byte * 0 + faceOffset]
+	movzx intGpr2, byte ptr [intGpr4 + sizeof byte * 1 + faceOffset]
+	movzx intGpr3, byte ptr [intGpr4 + sizeof byte * 2 + faceOffset]
+
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * intGpr1]
 	movss real4 ptr [intLoc + sizeof real4 * 0], xmmInt1
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert1Index]
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * intGpr2]
 	movss real4 ptr [intLoc + sizeof real4 * 1], xmmInt1
-	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * vert2Index]
+	movss xmmInt1, real4 ptr [zLoc + sizeof real4 * intGpr3]
 	movss real4 ptr [intLoc + sizeof real4 * 2], xmmInt1
-	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert0Index]
+	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * intGpr1]
 	movss real4 ptr [intLoc + sizeof real4 * 3], xmmInt1
-	movss xmmInt1, real4 ptr [yLoc + sizeof real4 * vert0Index]
+	movss xmmInt1, real4 ptr [yLoc + sizeof real4 * intGpr1]
 	movss real4 ptr [intLoc + sizeof real4 * 4], xmmInt1
-	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert1Index]
+	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * intGpr2]
 	movss real4 ptr [intLoc + sizeof real4 * 5], xmmInt1
-	movss xmmInt1, real4 ptr [yLoc + sizeof real4 * vert1Index]
+	movss xmmInt1, real4 ptr [yLoc + sizeof real4 * intGpr2]
 	movss real4 ptr [intLoc + sizeof real4 * 6], xmmInt1
-	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * vert2Index]
+	movss xmmInt1, real4 ptr [xLoc + sizeof real4 * intGpr3]
 	movss real4 ptr [intLoc + sizeof real4 * 7], xmmInt1
 
 	vmovups ymmInt3, ymmword ptr [intLoc]
 	;ymmInt3: (xW3, yW2, xW2, yW1, xW1, z3, z2, z1)
 	
-	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, vert0Index, intLoc2
-	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, vert1Index, intLoc2
-	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, vert2Index, intLoc2
+	LoadVerticalVerticesIAtLoc xmm7, ymm4, ymm5, intGpr1, intLoc2
+	LoadVerticalVerticesIAtLoc xmm3, ymm4, ymm5, intGpr2, intLoc2
+	LoadVerticalVerticesIAtLoc xmm6, ymm4, ymm5, intGpr3, intLoc2
 
-	LoadPointsAndRasterize xmm7, xmm3, xmm6, rax, rcx, rdx, eax, ecx, edx, yLoc, vert2Index
+	LoadPointsAndRasterize xmm7, xmm3, xmm6, intGpr1, intGpr2, intGpr3, intGprD1, intGprD2, intGprD3, yLoc, intGpr3
 endm
+
+;ymm0: x screen coords, ymm1: y screen coords, r8: index of coord 0
+;returns whether the face should be rendered in al.
+CheckClockwiseFace proc
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof ymmword
+	LoadVerticalVerticesIAtLoc xmm2, ymm0, ymm1, r8, rbp - sizeof ymmword
+	LoadVerticalVerticesIAtLoc xmm3, ymm0, ymm1, r8 + 1, rbp - sizeof ymmword
+	LoadVerticalVerticesIAtLoc xmm4, ymm0, ymm1, r8 + 2, rbp - sizeof ymmword
+	vsubps xmm5, xmm3, xmm2
+	shufps xmm5, xmm5, SHUFFLE_CROSS_X_Y
+	mulss xmm5, real4 ptr [negOne]
+	vsubps xmm6, xmm2, xmm4
+	cvtdq2ps xmm5, xmm5
+	cvtdq2ps xmm6, xmm6
+	Vector3Dot xmm6, xmm5
+	comiss xmm6, real4 ptr [zero]
+	setg al
+
+	mov rsp, rbp
+	pop rbp
+	ret
+CheckClockwiseFace endp
 
 RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 	vmovups ymmX, ymmword ptr [xLoc]
@@ -995,15 +1055,8 @@ RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 endm
 
 ;;renders a cube at some location
-;;ymm0: input x, ymm1: input y, ymm2: input z, stack param #2: data of cube (Cube struct)
+;;ymm0: input x, ymm1: input y, ymm2: input z, stack param: data of cube (Cube struct)
 RenderCubeLoc proc
-	vmovups ymm4, ymmword ptr [cubeVerticesX]
-	vmovups ymm5, ymmword ptr [cubeVerticesY]
-	vmovups ymm6, ymmword ptr [cubeVerticesZ]
-
-	vaddps ymm4, ymm4, ymm0
-	vaddps ymm5, ymm5, ymm1
-	vaddps ymm6, ymm6, ymm2
 	
 	push rbp
 	mov rbp, rsp
@@ -1014,6 +1067,17 @@ RenderCubeLoc proc
 	push r13
 	push r14
 	push r15
+	
+	;add 8 for return address and 8 for original value of rbp
+	CUBE_DATA_PARAM_LOC equ rbp + 32 + 8 + 8
+	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+	vmovups ymm4, (Cube ptr [rax]).xVert
+	vmovups ymm5, (Cube ptr [rax]).yVert
+	vmovups ymm6, (Cube ptr [rax]).zVert
+
+	vaddps ymm4, ymm4, ymm0
+	vaddps ymm5, ymm5, ymm1
+	vaddps ymm6, ymm6, ymm2
 
 	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
@@ -1034,10 +1098,11 @@ RenderCubeLoc proc
 	vmovups ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword * 1]
 	vmovups ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword * 2]
 	vmovups ymm6, ymmword ptr [rotated_points_loc - sizeof ymmword * 3]
-
-	vmovups ymmword ptr [cubeVerticesX], ymm4
-	vmovups ymmword ptr [cubeVerticesY], ymm5
-	vmovups ymmword ptr [cubeVerticesZ], ymm6
+	
+	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+	vmovups (Cube ptr [rax]).xVert, ymm4
+	vmovups (Cube ptr [rax]).yVert, ymm5
+	vmovups (Cube ptr [rax]).zVert, ymm6
 
 	movzx eax, word ptr [charbufferSize]
 	cvtsi2ss xmm0, eax
@@ -1071,6 +1136,10 @@ RenderCubeLoc proc
 
 	vaddps ymm4, ymm4, ymm0;final x floating-point vertices
 	vaddps ymm5, ymm5, ymm1;final y floating-point vertices
+	
+	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+	mov ax, (Cube ptr [rax]).color
+	mov word ptr [rsp + 32], ax
 
 	if draw_lines
 
@@ -1126,10 +1195,7 @@ RenderCubeLoc proc
 	vhsubps xmm6, xmm6, xmmword ptr [ymmwordLoc + sizeof xmmword];final second point dif in y
 
 	cvtss2si ebx, xmm2
-
-	;add 8 for return address and 8 for original value of rbp
-	mov ax, word ptr [rbp + 32 + 8 + 8]
-	mov word ptr [rsp + 32], ax
+	
 
 	LoadLinePts LoadFirstVerticalVertices, LoadVerticalVertices1, LoadFirstVerticalVertices, xmm0, xmm1, lh1, nr1, dontRender1
 	LoadLinePts LoadVerticalVertices2, LoadVerticalVertices3, LoadVerticalVertices1, xmm0, xmm1, lh2, nr2, dontRender2
@@ -1199,36 +1265,54 @@ RenderCubeLoc proc
 	vcvttps2dq ymm4, ymm4;final doubleword x vertices
 	vcvttps2dq ymm5, ymm5;final doubleword y vertices
 
+
 	vmovups ymmword ptr [rbp - sizeof ymmword], ymm2
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm4
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm5
 	vmovups ymmword ptr [rbp - sizeof ymmword * 4], ymm0
 
-	;this can be expanded out to insert instructions for the lower xmm word instead of memory to memory to improve performance
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 2, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	if draw_faces
+
+	;call CheckClockwiseFace
+
+	mov ebx, CUBE_INDEX_BUFFER_NUM_TRI
+
+renderFacesHead:
+	mov eax, ebx
+	mov r10d, 3
+	mul r10d
+	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, r9, rcx, rdx, r9d, ecx, edx, r8, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6, rax - 3
 	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 5, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 7, 4, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 3, 4, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 4, 5, 1, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 1, 0, 4, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 6, 7, 3, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 3, 2, 6, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 5, 4, 7, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 7, 6, 5, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 2, 3, 0, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, 0, 1, 2, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6
+	dec ebx
+	test ebx, -1
+	jnz renderFacesHead
+
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 0 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 1 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 2 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 3 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 4 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 5 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 6 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 7 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 8 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 9 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 10 * sizeof byte * 3
+	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6, 11 * sizeof byte * 3
 	
+	endif
+
 	vmovups ymm2, ymmword ptr [rbp - sizeof ymmword]
 	vmovups ymm4, ymmword ptr [rbp - sizeof ymmword * 2]
 	vmovups ymm5, ymmword ptr [rbp - sizeof ymmword * 3]
@@ -1297,7 +1381,8 @@ renderCharHead:
 		add rdx, qword ptr [charBuffer];HEEEY FUTURE ME when you get a chance read through 3.9 - 4 of the architecture manual
 		mov byte ptr [rdx], al
 		;color
-		mov ax, word ptr [rbp + 32 + 8 + 8]
+		mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+		mov ax, word ptr (Cube ptr [rax]).color
 		mov word ptr [rdx + sizeof word], ax
 	loop renderCharHead
 	

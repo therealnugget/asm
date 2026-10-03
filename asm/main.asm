@@ -93,16 +93,16 @@ LARGE_INTEGER ends
 Cube struct
 	xVert real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 	yVert real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
-	zVert real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
+	zVert real4 -1.5, -2.5, -2.5, -1.5, -1.5, -2.5, -2.5, -1.5
 
-	;TODO: implement local rotation and position
 	rotation real4 0.0
 	position real4 0.0, 0.0, 0.0, 0.0
 
-	color dw FOREGROUND_INTENSITY
+	color dw FOREGROUND_BLUE
 Cube ends
 
-cubes dq ?
+singleCube Cube {}
+singleCube2 Cube {}
 charBuffer dq ?
 stdOutHandle dq ?
 heapHandle dq ?
@@ -124,6 +124,8 @@ XAxis real4 1.0, 0.0, 0.0, 0.0
 YAxis real4 0.0, 1.0, 0.0, 0.0
 ZAxis real4 0.0, 0.0, 1.0, 0.0
 charBufferSize COORD {?, ?}
+cumulativeDeltaTime real4 0.0
+frameCounter real4 0.0
 .code
 
 ;takes input from posKey and negKey, subtracts (stack push/poop), stores it in xmm0, multiplies by moveSpeed then broadcasts to ymmReg
@@ -198,6 +200,7 @@ ShiftIntoReg macro dst, val, shf
 	shl dst, shf
 endm
 
+;returns delta time in xmm0
 DeltaTime proc
 	lea rcx, cTime
 	sub rsp, 20h
@@ -260,18 +263,19 @@ noStdHandleError:
 	mov cx, charBufferSize.Y
 	mul cx
 	mov charBufferLen, eax
+	mov ebx, eax
 	dec eax
 	mov maxCharValue, eax
-	mov ebx, eax
 
+	mov eax, ebx
 	mov ecx, sizeof CHAR_INFO
 	mul ecx
-	mov rcx, rax
+	mov ecx, eax
 	call MemAlloc
 	mov charBuffer, rax
 
 	mov eax, ebx
-	mov ecx, sizeof word
+	mov ecx, sizeof real4
 	mul ecx
 	mov ecx, eax
 	call MemAlloc
@@ -314,24 +318,15 @@ clearPastKeyLoop:
 		mov byte ptr [rdx + rcx * sizeof byte - sizeof byte], 0
 	loop clearPastKeyLoop
 
-	vmovups ymm4, ymmword ptr [cubeVerticesX]
-	vmovups ymm5, ymmword ptr [cubeVerticesY]
-	vmovups ymm6, ymmword ptr [cubeVerticesZ]
-	vmovups ymm0, ymmword ptr [cubeScaleVec]
-	vmulps ymm4, ymm4, ymm0
-	vmulps ymm5, ymm5, ymm0
-	vmulps ymm6, ymm6, ymm0
-
-	vaddps ymm6, ymm6, ymmword ptr [verticesZOffset]
-
-	vmovups ymmword ptr [cubeVerticesX], ymm4
-	vmovups ymmword ptr [cubeVerticesY], ymm5
-	vmovups ymmword ptr [cubeVerticesZ], ymm6
-
 	lea rcx, frequency
 	call QueryPerformanceFrequency
 	lea rcx, pTime
 	call QueryPerformanceCounter
+
+	vmovups ymm0, ymmword ptr [oneVec]
+	vmovups ymm1, singleCube2.xVert
+	vaddps ymm1, ymm1, ymm0
+	vmovups singleCube2.xVert, ymm1
 
 mainLoopHead:
 
@@ -344,14 +339,15 @@ mainLoopHead:
 		test al, 1
 		jnz afterMainLoop
 
+		mov rbx, qword ptr [zBuffer]
 		mov rax, qword ptr [charBuffer]
 		mov ecx, dword ptr [maxCharValue]
 		mov dl, "'"
 
 	charAssignHead:
-		;we're saying move a byte of a comma value into char buffer location + (length of char buffer - 1) * size of char info
 		mov byte ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO], dl
 		mov word ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO + sizeof word], FOREGROUND_INTENSITY
+		mov dword ptr [rbx + rcx * sizeof real4 - sizeof real4], FLT_MAX_I
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A
@@ -369,10 +365,21 @@ mainLoopHead:
 		lea rcx, LightDirection
 		call RotateVecByInput
 
+		lea rcx, CameraDirection
+		call RotateVecByInput
+
 		vmovups ymm0, ymmword ptr [cameraInputX]
 		vmovups ymm1, ymmword ptr [cameraInputY]
 		vmovups ymm2, ymmword ptr [cameraInputZ]
-		mov word ptr [rsp + 32], FOREGROUND_BLUE
+		lea rax, singleCube
+		mov qword ptr [rsp + 32], rax
+		call RenderCubeLoc
+		
+		vmovups ymm0, ymmword ptr [cameraInputX]
+		vmovups ymm1, ymmword ptr [cameraInputY]
+		vmovups ymm2, ymmword ptr [cameraInputZ]
+		lea rax, singleCube2
+		mov qword ptr [rsp + 32], rax
 		call RenderCubeLoc
 
 		mov rcx, stdOutHandle
@@ -396,6 +403,14 @@ mainLoopHead:
 
 		loop pastKeyLoop
 
+		call DeltaTime
+		movss xmm1, real4 ptr [cumulativeDeltaTime]
+		addss xmm1, xmm0
+		movss real4 ptr [cumulativeDeltaTime], xmm1
+		movss xmm0, real4 ptr [frameCounter]
+		addss xmm0, real4 ptr [one]
+		movss real4 ptr [frameCounter], xmm0
+
 		lea rcx, pTime
 		call QueryPerformanceCounter
 
@@ -403,6 +418,8 @@ mainLoopHead:
 		call Sleep
 	jmp mainLoopHead
 afterMainLoop:
+	movss xmm0, cumulativeDeltaTime
+	divss xmm0, real4 ptr [frameCounter]
 	mov rcx, charBuffer
 	call MemFree
 	mov rsp, rbp
@@ -424,7 +441,7 @@ MemAlloc proc
 	add rsp, 32
 	ret
 MemAlloc endp
-;rcx: qword location to free.If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. An application can call GetLastError for extended error information.
+;rcx: qword location to free. If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. An application can call GetLastError for extended error information.
 MemFree proc
 	mov r8, rcx
 	mov rcx, heapHandle
