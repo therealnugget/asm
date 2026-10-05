@@ -327,6 +327,7 @@ clearPastKeyLoop:
 	vmovups ymm1, singleCube2.xVert
 	vaddps ymm1, ymm1, ymm0
 	vmovups singleCube2.xVert, ymm1
+	mov word ptr [singleCube2.color], FOREGROUND_RED
 
 mainLoopHead:
 

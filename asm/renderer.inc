@@ -1,6 +1,6 @@
 ifndef renderer
 renderer equ 1
-draw_vertices equ 1
+draw_vertices equ 0
 draw_lines equ 0
 draw_faces equ 1
 .data
@@ -883,20 +883,20 @@ rasterizeYHead:
 		comiss xmm0, xmm1
 		movzx rcx, byte ptr [rdx]
 		;we reverse the conditions of the z buffer because we define things in front of the camera as having a -ve z
-		cmovge rdx, rcx
+		cmovae rdx, rcx
 		movzx rcx, byte ptr [rax]
-		cmovl rdx, rcx
+		cmovb rdx, rcx
 		;current z buffer value @ rbx
 		movd ecx, xmm1
-		cmovl r8d, ecx
-		cmovge r8d, real4 ptr [rbx]
+		cmovb r8d, ecx
+		cmovae r8d, real4 ptr [rbx]
 		mov dword ptr [rbx], r8d
 
 		mov byte ptr [rax], dl
 		;add 8 for return address and 8 for original value of rbp
 		mov dx, word ptr [rbp + 32 + 8 + 8]
 		movzx r8d, word ptr [rax + sizeof word]
-		cmovl edx, r8d
+		cmovb edx, r8d
 		mov word ptr [rax + sizeof word], dx
 		
 	skipRender:
@@ -1060,7 +1060,7 @@ CheckClockwiseFace proc
 	cvtdq2ps xmm6, xmm6
 	Vector3Dot xmm6, xmm5
 	comiss xmm6, real4 ptr [zero]
-	setg al
+	seta al
 
 	mov rsp, rbp
 	pop rbp
