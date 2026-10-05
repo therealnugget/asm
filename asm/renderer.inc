@@ -1,7 +1,7 @@
 ifndef renderer
 renderer equ 1
 draw_vertices equ 1
-draw_lines equ 1
+draw_lines equ 0
 draw_faces equ 1
 .data
 ;minimum float value AS an integer
@@ -74,6 +74,7 @@ SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
 ONE_AT_1 real4 0.0, 1.0, 0.0, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
+NegateFistDword dd -1, 1, 1, 1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
 NegNanVec dd 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh, 0FFFFFFFFh
 CubeFaceIndexBuffer db 6, 2, 1
@@ -263,17 +264,23 @@ endm
 ;uses ymmword of stack
 LoadVerticalVerticesI macro xmmDst, ymmSrc1, ymmSrc2, i
 	vmovups ymmword ptr [rbp - sizeof ymmword], ymmSrc1
-	movss xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i]
+	movss xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * (i)]
 	vmovups ymmword ptr [rbp - sizeof ymmword], ymmSrc2
-	insertps xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * i], INSERT_0_TO_1
+	insertps xmmDst, real4 ptr [rbp - sizeof ymmword + sizeof real4 * (i)], INSERT_0_TO_1
 endm
 
 ;uses ymmword of stack
 LoadVerticalVerticesIAtLoc macro xmmDst, ymmSrc1, ymmSrc2, i, ymmwordMem
 	vmovups ymmword ptr [ymmwordMem], ymmSrc1
-	movss xmmDst, real4 ptr [ymmwordMem + sizeof real4 * i]
+	movss xmmDst, real4 ptr [ymmwordMem + sizeof real4 * (i)]
 	vmovups ymmword ptr [ymmwordMem], ymmSrc2
-	insertps xmmDst, real4 ptr [ymmwordMem + sizeof real4 * i], INSERT_0_TO_1
+	insertps xmmDst, real4 ptr [ymmwordMem + sizeof real4 * (i)], INSERT_0_TO_1
+endm
+
+;uses ymmword of stack.
+LoadVerticalVerticesIAtLocPreexisting macro xmmDst, i, ymmwordLoc1, ymmwordLoc2
+	movss xmmDst, real4 ptr [ymmwordLoc1 + sizeof real4 * (i)]
+	insertps xmmDst, real4 ptr [ymmwordLoc2 + sizeof real4 * (i)], INSERT_0_TO_1
 endm
 
 ;xmmInt is intermediate register that will be modified. only xmmDst and xmmInt are used.
@@ -1030,14 +1037,25 @@ endm
 CheckClockwiseFace proc
 	push rbp
 	mov rbp, rsp
-	sub rsp, sizeof ymmword
-	LoadVerticalVerticesIAtLoc xmm2, ymm0, ymm1, r8, rbp - sizeof ymmword
-	LoadVerticalVerticesIAtLoc xmm3, ymm0, ymm1, r8 + 1, rbp - sizeof ymmword
-	LoadVerticalVerticesIAtLoc xmm4, ymm0, ymm1, r8 + 2, rbp - sizeof ymmword
-	vsubps xmm5, xmm3, xmm2
+	sub rsp, sizeof ymmword * 2
+	dec r8
+	mov rcx, 3
+	mov rax, r8
+	mul rcx
+	vmovups ymmword ptr [rbp - sizeof ymmword], ymm0
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm1
+	lea rcx, CubeFaceIndexBuffer
+	movzx r8, byte ptr [rcx + rax]
+	LoadVerticalVerticesIAtLocPreexisting xmm2, r8, rbp - sizeof ymmword, rbp - sizeof ymmword * 2
+	movzx r8, byte ptr [rcx + sizeof byte * 1 + rax]
+	LoadVerticalVerticesIAtLocPreexisting xmm3, r8, rbp - sizeof ymmword, rbp - sizeof ymmword * 2
+	movzx r8, byte ptr [rcx + sizeof byte * 2 + rax]
+	LoadVerticalVerticesIAtLocPreexisting xmm4, r8, rbp - sizeof ymmword, rbp - sizeof ymmword * 2
+	vpsubd xmm5, xmm3, xmm2
 	shufps xmm5, xmm5, SHUFFLE_CROSS_X_Y
-	mulss xmm5, real4 ptr [negOne]
-	vsubps xmm6, xmm2, xmm4
+	movups xmm6, xmmword ptr [NegateFistDword]
+	pmulld xmm5, xmm6
+	vpsubd xmm6, xmm2, xmm4
 	cvtdq2ps xmm5, xmm5
 	cvtdq2ps xmm6, xmm6
 	Vector3Dot xmm6, xmm5
@@ -1273,43 +1291,27 @@ RenderCubeLoc proc
 
 	if draw_faces
 
-	;call CheckClockwiseFace
 
 	mov ebx, CUBE_INDEX_BUFFER_NUM_TRI
 
 renderFacesHead:
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+	vmovaps ymm0, ymm4
+	vmovaps ymm1, ymm5
+	mov r8d, ebx
+	call CheckClockwiseFace
+	test al, 1
+	jz noFaceRender
+	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
 	mov eax, ebx
 	mov r10d, 3
 	mul r10d
 	LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, r9, rcx, rdx, r9d, ecx, edx, r8, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6, rax - 3
-	RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
+noFaceRender:
 	dec ebx
 	test ebx, -1
 	jnz renderFacesHead
 
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 0 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 1 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 2 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 3 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 4 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 5 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 6 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 7 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 8 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 9 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ;ymmword * 6, 10 * sizeof byte * 3
-	;RestoreRasterizationPoints ymm4, ymm5, rbp - sizeof ymmword * 2, rbp - sizeof ymmword * 3
-	;LoadPointsAndRasterizeOuter xmm1, xmm8, xmm2, ymm1, ymm8, ymm2, rax, rcx, rdx, rbp - sizeof ymmword * 7, rbp - sizeof ymmword * 8, rbp - sizeof ymmword * 10, rbp - sizeof ymmword * 9, rbp - sizeof ymmword * 6, 11 * sizeof byte * 3
 	
 	endif
 
