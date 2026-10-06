@@ -348,7 +348,7 @@ mainLoopHead:
 	charAssignHead:
 		mov byte ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO], dl
 		mov word ptr [rax + rcx * sizeof CHAR_INFO - sizeof CHAR_INFO + sizeof word], FOREGROUND_INTENSITY
-		mov dword ptr [rbx + rcx * sizeof real4 - sizeof real4], FLT_MAX_I
+		mov dword ptr [rbx + rcx * sizeof real4 - sizeof real4], FLT_MIN_I
 		loop charAssignHead
 
 		ConvInputToVec KEYCODE_D, KEYCODE_A

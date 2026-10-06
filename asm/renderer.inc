@@ -883,9 +883,9 @@ rasterizeYHead:
 		comiss xmm0, xmm1
 		movzx rcx, byte ptr [rdx]
 		;we reverse the conditions of the z buffer because we define things in front of the camera as having a -ve z
-		cmovae rdx, rcx
-		movzx rcx, byte ptr [rax]
 		cmovb rdx, rcx
+		movzx rcx, byte ptr [rax]
+		cmovae rdx, rcx
 		;current z buffer value @ rbx
 		movd ecx, xmm1
 		cmovb r8d, ecx
@@ -896,7 +896,7 @@ rasterizeYHead:
 		;add 8 for return address and 8 for original value of rbp
 		mov dx, word ptr [rbp + 32 + 8 + 8]
 		movzx r8d, word ptr [rax + sizeof word]
-		cmovb edx, r8d
+		cmovae edx, r8d
 		mov word ptr [rax + sizeof word], dx
 		
 	skipRender:
