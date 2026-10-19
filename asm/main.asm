@@ -39,6 +39,8 @@ bits_in_byte equ 8
 SW_MAXIMIZE equ 3
 NUM_BITS_IN_WORD equ sizeof word * bits_in_byte
 NUM_BITS_IN_DWORD equ sizeof dword * bits_in_byte
+;;i know this is the same as above but i'm just being anal (lol).
+NUM_BITS_IN_REAL4 equ sizeof real4 * bits_in_byte
 TIMER_QUADPART_MULTIPLICAND equ 1000000
 FRAME_WAIT_TIME equ 1
 
@@ -101,8 +103,27 @@ Cube struct
 	color dw FOREGROUND_BLUE
 Cube ends
 
+Sphere struct
+	align 16
+	scaleVector real4 1.0, 2.0, 1.0, 1.0
+	
+	positionX real4 0.0
+	positionY real4 0.0
+	positionZ real4 -1.0
+
+	radiusSqr real4 500.0
+
+	color dw FOREGROUND_GREEN
+
+	;the lower this is, the higher the resolution of the sphere. 2 would be half resolution, 3 a third, and so on.
+	sphereRes db 1
+Sphere ends
+
 singleCube Cube {}
 singleCube2 Cube {}
+;;need to align 16 here so that the first data block of the sphere struct, the "shearVector" is aligned to 16 bytes, as well as the struct itself.
+align 16
+singleSphere Sphere {}
 charBuffer dq ?
 stdOutHandle dq ?
 heapHandle dq ?
@@ -328,8 +349,15 @@ clearPastKeyLoop:
 	vaddps ymm1, ymm1, ymm0
 	vmovups singleCube2.xVert, ymm1
 	mov word ptr [singleCube2.color], FOREGROUND_RED
+	or word ptr [singleCube2.color], FOREGROUND_BLUE
+	or word ptr [singleCube2.color], FOREGROUND_INTENSITY
+
+	or word ptr [singleCube.color], FOREGROUND_GREEN
 
 mainLoopHead:
+
+		movups xmm0, real4 ptr [frameCounter]
+		movups real4 ptr [singleCube2.rotation], xmm0
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -374,14 +402,17 @@ mainLoopHead:
 		vmovups ymm2, ymmword ptr [cameraInputZ]
 		lea rax, singleCube
 		mov qword ptr [rsp + 32], rax
-		call RenderCubeLoc
-		
-		vmovups ymm0, ymmword ptr [cameraInputX]
-		vmovups ymm1, ymmword ptr [cameraInputY]
-		vmovups ymm2, ymmword ptr [cameraInputZ]
-		lea rax, singleCube2
-		mov qword ptr [rsp + 32], rax
-		call RenderCubeLoc
+		;call RenderCube
+		;
+		;vmovups ymm0, ymmword ptr [cameraInputX]
+		;vmovups ymm1, ymmword ptr [cameraInputY]
+		;vmovups ymm2, ymmword ptr [cameraInputZ]
+		;lea rax, singleCube2
+		;mov qword ptr [rsp + 32], rax
+		;call RenderCube
+
+		lea rcx, singleSphere
+		call RenderSphere
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]

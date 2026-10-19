@@ -72,7 +72,7 @@ CameraDirection real4 0.0, 0.0, -1.0, 0.0
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
 SingledefVec zeroVec, 0.0
-ONE_AT_1 real4 0.0, 1.0, 0.0, 0.0
+oneAt1 real4 0.0, 1.0, 0.0, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 NegateFistDword dd -1, 1, 1, 1
 PosNanVec dd 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647
@@ -147,6 +147,7 @@ RotateVecByInput proc
 	ret
 RotateVecByInput endp
 
+;;TODO: bake intno the signure of this function the x and y rotation so that local rotation can be implemented.
 RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 
 	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
@@ -174,15 +175,6 @@ RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 	;mov al, HALF_ROTATION
 	;call QuatAngleAxis
 	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
-	;call QuatMult
-
-
-	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
-	;movups xmm1, xmmword ptr [AbsoluteRotation + VERTEX_OFFSET_INDEX * sizeof xmmword]
-	;
-	;call QuatMult
-	;movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
-	;movups xmmword ptr [AbsoluteRotation + VERTEX_OFFSET_INDEX * sizeof xmmword], xmm1
 	;call QuatMult
 
 	ConvertHorizonPtToVert MAX_RET_LOC, VERTEX_OFFSET_INDEX * sizeof real4
@@ -466,7 +458,7 @@ ProcessX macro curX, curY, intermediate, curPixel, const, area, loopHead, endFun
 	movss area, intermediate
 	comiss intermediate, real4 ptr [zero]
 	jae endFuncLabel
-	movups intermediate, xmmword ptr [ONE_AT_1]
+	movups intermediate, xmmword ptr [oneAt1]
 	addps curPixel, intermediate
 	jmp loopHead
 endFuncLabel:
@@ -901,7 +893,7 @@ rasterizeYHead:
 		
 	skipRender:
 		;xmm10: y, x
-		movups xmm1, xmmword ptr [ONE_AT_1]
+		movups xmm1, xmmword ptr [oneAt1]
 		addps xmm10, xmm1
 
 		jmp rasterizeXHead
@@ -1072,9 +1064,183 @@ RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 	vmovups ymmY, ymmword ptr [yLoc]
 endm
 
+;;renders a billboard circle at a point in world space.
+;;rcx: pointer to Sphere struct data.
+RenderSphere proc
+	push rbx
+	push r12
+	push r13
+	push r14
+	push r15
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof xmmword + sizeof qword + 40
+
+	movss xmm0, (Sphere ptr [rcx]).positionX
+	addss xmm0, real4 ptr [cameraInputX]
+	movss xmm1, (Sphere ptr [rcx]).positionY
+	addss xmm1, real4 ptr [cameraInputY]
+	movss xmm2, (Sphere ptr [rcx]).positionZ
+	addss xmm2, real4 ptr [cameraInputZ]
+
+	movss (Sphere ptr [rcx]).positionX, xmm0
+	movss (Sphere ptr [rcx]).positionY, xmm1
+	movss (Sphere ptr [rcx]).positionZ, xmm2
+
+	mov qword ptr [rbp - sizeof xmmword - sizeof qword], rcx
+	mov al, byte ptr [rotationX]
+	movups xmm0, xmmword ptr [XAxis]
+	call QuatAngleAxis
+	movups xmmword ptr [rbp - sizeof xmmword], xmm0
+	
+	mov al, rotationY
+	movups xmm0, xmmword ptr [YAxis]
+	call QuatAngleAxis
+	movups xmm1, xmmword ptr [rbp - sizeof xmmword]
+	call QuatMult
+	mov rcx, qword ptr [rbp - sizeof xmmword - sizeof qword]
+
+	movss xmm1, (Sphere ptr [rcx]).positionX
+	insertps xmm1, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
+	insertps xmm1, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
+	call QuatMultVec
+	movups xmmword ptr [rbp - sizeof xmmword], xmm0
+	mov rcx, qword ptr [rbp - sizeof xmmword - sizeof qword]
+
+	movss (Sphere ptr [rcx]).positionX, xmm0
+	movss xmm1, real4 ptr [rbp - sizeof real4 * 3]
+	movss (Sphere ptr [rcx]).positionY, xmm1
+	movss xmm2, real4 ptr [rbp - sizeof real4 * 2]
+	movss (Sphere ptr [rcx]).positionZ, xmm2
+	
+	comiss xmm2, real4 ptr [zero]
+	ja endFunc
+
+	;xmm5: square radius
+	movss xmm5, (Sphere ptr [rcx]).radiusSqr
+
+	mov r15w, (Sphere ptr [rcx]).color
+	
+	movzx eax, word ptr [charbufferSize]
+	cvtsi2ss xmm3, eax
+	movzx eax, word ptr [charbufferSize + sizeof word]
+	cvtsi2ss xmm4, eax
+
+	divss xmm0, xmm2
+	divss xmm1, xmm2
+	mulss xmm0, xmm3
+	mulss xmm1, xmm4
+	movss xmm6, xmm3
+	movss xmm7, xmm4
+	mulss xmm6, real4 ptr [oneHalf]
+	mulss xmm7, real4 ptr [oneHalf]
+	addss xmm0, xmm6
+	addss xmm1, xmm7
+
+	insertps xmm0, xmm1, INSERT_0_TO_1
+
+	divss xmm5, xmm2
+	pand xmm5, xmmword ptr [ABS_VALUE_MASK_F]
+	vbroadcastss xmm5, xmm5
+	
+	movaps xmm11, (Sphere ptr [rcx]).scaleVector
+
+	sqrtss xmm12, xmm5
+	vbroadcastss xmm12, xmm12
+	divps xmm12, xmm11
+
+	;xmm0: the centre of the sphere in screen space
+
+	;xmm9: the final pixel coordinate
+	vaddps xmm9, xmm0, xmm12
+	;xmm8: the current pixel coordinate
+	vsubps xmm8, xmm0, xmm12
+
+	movzx ebx, (SMALL_RECT ptr [charBufferMaxVal]).Right
+	movzx r10d, (SMALL_RECT ptr [charBufferMaxVal]).Bottom
+
+	;;;TEMP
+	;;;below uses xmm0, xmm5, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12    initially.
+	;;;TEMP
+circleRenderHead:
+	vsubps xmm7, xmm8, xmm0
+	mulps xmm7, xmm11
+	dpps xmm7, xmm7, VECTOR_2_DOT_MASK
+	comiss xmm7, xmm5
+	seta r8b
+
+	vdivss xmm1, xmm7, xmm5
+	movss xmm2, xmm1
+	mulss xmm2, real4 ptr [two]
+	subss xmm2, real4 ptr [one]
+	mulss xmm3, xmm2
+	mulss xmm1, real4 ptr [LAST_LIGHTING_CHAR]
+	cvtss2si r12d, xmm1
+	lea r11, LIGHTING_CHARS
+	add r11, r12
+	mov r11b, byte ptr [r11]
+
+	cvttps2dq xmm7, xmm8
+	movd eax, xmm7
+	pextrd edx, xmm7, INSERT_1
+	
+	cmp eax, 0
+	setl r9b
+	or r8b, r9b
+	cmp edx, 0
+	setl r9b
+	or r8b, r9b
+	cmp eax, ebx
+	setg r9b
+	or r8b, r9b
+	cmp edx, r10d
+	setg r9b
+	or r8b, r9b
+	test r8b, 1
+	jnz noRender
+
+	;the below only uses eax and edx.
+	mov r8d, eax
+	mov eax, edx
+	movzx r9d, word ptr [charbufferSize]
+	mul r9d
+	mov edx, eax
+	mov eax, r8d
+
+	;eax holds screen pos of centre of circle.
+	add eax, edx
+	mov r9d, sizeof CHAR_INFO
+	mul r9d
+	add rax, qword ptr [charBuffer]
+	mov byte ptr [rax], r11b
+	mov word ptr [rax + sizeof word], r15w
+noRender:
+	addss xmm8, real4 ptr [one]
+	comiss xmm8, xmm9
+	jb circleRenderHead
+	movss xmm8, xmm0
+	subss xmm8, xmm12
+	addps xmm8, xmmword ptr [oneAt1]
+	vcmpps xmm10, xmm8, xmm9, LESS_VEC_CMP
+	extractps eax, xmm10, INSERT_1
+	test eax, 1
+	jnz circleRenderHead
+
+
+endFunc:
+	mov rsp, rbp
+	pop rbp
+	pop r12
+	pop r13
+	pop r14
+	pop r15
+	pop rbx
+	ret
+RenderSphere endp
+
 ;;renders a cube at some location
 ;;ymm0: input x, ymm1: input y, ymm2: input z, stack param: data of cube (Cube struct)
-RenderCubeLoc proc
+RenderCube proc
 	
 	push rbp
 	mov rbp, rsp
@@ -1325,7 +1491,10 @@ noFaceRender:
 	;;; | | | | |
 	;;; \/\/\/\/\/
 	if draw_vertices
-	vmulps ymm5, ymm5, ymm2
+	;still holds charBufferSize x
+	vcvttps2dq ymm2, ymm2
+	;for the longest time this was a floating point multiply of a double word vector ymm5 and a floating point vector of ymm2. didn't even notice because for some reason it worked the same as this! i think it's got to do with the values in ymm5 being so small that the entire integer fits in the integer part of ymm5.
+	vpmulld ymm5, ymm5, ymm2
 	;add sizeof word * 2 because we're dipping into a struct's data here
 	movzx eax, word ptr [charBufferMaxVal + sizeof word * 2]
 	movd xmm3, eax
@@ -1399,5 +1568,5 @@ renderCharHead:
 	pop rbp
 
 	ret
-RenderCubeLoc endp
+RenderCube endp
 endif
