@@ -35,12 +35,12 @@ HEAP_NO_SERIALIZE equ 1
 HEAP_ZERO_MEMORY equ 8
 STD_OUTPUT_HANDLE equ -11
 small_rect_size equ sizeof SMALL_RECT
-bits_in_byte equ 8
+BITS_IN_BYTE equ 8
 SW_MAXIMIZE equ 3
-NUM_BITS_IN_WORD equ sizeof word * bits_in_byte
-NUM_BITS_IN_DWORD equ sizeof dword * bits_in_byte
+NUM_BITS_IN_WORD equ sizeof word * BITS_IN_BYTE
+NUM_BITS_IN_DWORD equ sizeof dword * BITS_IN_BYTE
 ;;i know this is the same as above but i'm just being anal (lol).
-NUM_BITS_IN_REAL4 equ sizeof real4 * bits_in_byte
+NUM_BITS_IN_REAL4 equ sizeof real4 * BITS_IN_BYTE
 TIMER_QUADPART_MULTIPLICAND equ 1000000
 FRAME_WAIT_TIME equ 1
 
@@ -95,10 +95,13 @@ LARGE_INTEGER ends
 Cube struct
 	xVert real4 0.5,  0.5,  0.5,  0.5, -0.5, -0.5, -0.5, -0.5
 	yVert real4 0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5
-	zVert real4 -1.5, -2.5, -2.5, -1.5, -1.5, -2.5, -2.5, -1.5
+	zVert real4 0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5
 
-	rotation real4 0.0
-	position real4 0.0, 0.0, 0.0, 0.0
+	;;this is the center point of the cube. it will move and rotate with the cube as the cube moves and rotates, so that it can be subtracted from the vertices to find the vertices at the origin.
+	centre real4 0.0, 0.0, 0.0, 0.0
+
+	rotationX db 0.0
+	rotationY db 0.0
 
 	color dw FOREGROUND_BLUE
 Cube ends
@@ -119,6 +122,7 @@ Sphere struct
 	sphereRes db 1
 Sphere ends
 
+align 16
 singleCube Cube {}
 singleCube2 Cube {}
 ;;need to align 16 here so that the first data block of the sphere struct, the "shearVector" is aligned to 16 bytes, as well as the struct itself.
@@ -356,8 +360,8 @@ clearPastKeyLoop:
 
 mainLoopHead:
 
-		movups xmm0, real4 ptr [frameCounter]
-		movups real4 ptr [singleCube2.rotation], xmm0
+		mov byte ptr [singleCube.rotationX], 0
+		mov byte ptr [singleCube.rotationY], 0
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -388,8 +392,8 @@ mainLoopHead:
 		ConvInputToVec KEYCODE_Q, KEYCODE_E
 		vmovups ymmword ptr [cameraInputZ], ymm1
 
-		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, rotationY
-		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, rotationX
+		ConvInputToScalar KEYCODE_LEFT, KEYCODE_RIGHT, camRotationY
+		ConvInputToScalar KEYCODE_DOWN, KEYCODE_UP, camRotationX
 
 		lea rcx, LightDirection
 		call RotateVecByInput
@@ -397,13 +401,13 @@ mainLoopHead:
 		lea rcx, CameraDirection
 		call RotateVecByInput
 
-		vmovups ymm0, ymmword ptr [cameraInputX]
-		vmovups ymm1, ymmword ptr [cameraInputY]
-		vmovups ymm2, ymmword ptr [cameraInputZ]
+		movss xmm0, real4 ptr [cameraInputX]
+		movss xmm1, real4 ptr [cameraInputY]
+		movss xmm2, real4 ptr [cameraInputZ]
 		lea rax, singleCube
 		mov qword ptr [rsp + 32], rax
-		;call RenderCube
-		;
+		call RenderCube
+		
 		;vmovups ymm0, ymmword ptr [cameraInputX]
 		;vmovups ymm1, ymmword ptr [cameraInputY]
 		;vmovups ymm2, ymmword ptr [cameraInputZ]
@@ -411,8 +415,8 @@ mainLoopHead:
 		;mov qword ptr [rsp + 32], rax
 		;call RenderCube
 
-		lea rcx, singleSphere
-		call RenderSphere
+		;lea rcx, singleSphere
+		;call RenderSphere
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]

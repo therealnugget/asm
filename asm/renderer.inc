@@ -91,8 +91,8 @@ CubeFaceIndexBuffer db 6, 2, 1
 					db 0, 1, 2
 LightingOffset real4 1.2
 LightingScale real4 0.55
-rotationX db 0
-rotationY db 0
+camRotationX db 0
+camRotationY db 0
 zBuffer dq ?
 ;LIGHTING_CHARS db '@', '%', '&', '$', '#', '*', '+', ',', '!', '.', '`'
 LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
@@ -109,11 +109,14 @@ ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
 	vmovups ymmword ptr [MAX_RET_LOC - sizeof ymmword * 3], ymm6
 
 	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword + VERTEX_OFFSET]
-	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4], eax;load x vertex from ymm4 into MAX_RET_LOC - sizeof ymmword * 4
+	;load x vertex from ymm4 into MAX_RET_LOC - sizeof ymmword * 4
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4], eax
 	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword * 2 + VERTEX_OFFSET]
-	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 1], eax;load y vertex from ymm5 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4
+	;load y vertex from ymm5 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 1], eax
 	mov eax, dword ptr [MAX_RET_LOC - sizeof ymmword * 3 + VERTEX_OFFSET]
-	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2], eax;load z vertex from ymm6 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2
+	;load z vertex from ymm6 into MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2
+	mov real4 ptr [MAX_RET_LOC - sizeof ymmword * 4 + sizeof real4 * 2], eax
 	
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4];now x vertex is in xmm1, y vertex is in xmm1 + sizeof real4, and z vertex is in xmm1 + sizeof real4 * 2, last real4 part is dummy memory.
 endm
@@ -125,12 +128,12 @@ RotateVecByInput proc
 	sub rsp, sizeof xmmword
 	push rcx
 
-	mov al, rotationX
+	mov al, camRotationX
 	movups xmm0, xmmword ptr [XAxis]
 	call QuatAngleAxis
 	movups xmmword ptr [rbp - sizeof xmmword], xmm0
 	
-	mov al, rotationY
+	mov al, camRotationY
 	movups xmm0, xmmword ptr [YAxis]
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [rbp - sizeof xmmword]
@@ -147,28 +150,30 @@ RotateVecByInput proc
 	ret
 RotateVecByInput endp
 
-;;TODO: bake intno the signure of this function the x and y rotation so that local rotation can be implemented.
+;;rbx (dummyByte, dummyByte, dummyByte, dummyByte, dummyByte, dummyByte, camRotationY, camRotationX)
 RotateVertices macro STORE_LOCATION, VERTEX_OFFSET_INDEX
 
 	MAX_RET_LOC equ STORE_LOCATION - sizeof ymmword * 3
 	
-	;;i'm using this one because it's more accurate
-	;;;this initial rotation has two solutions. i have written both. i believe the quaternion one to be more accurate so i will leave it in.
+	;;;this initial rotation has two solutions. i have written both. i believe the quaternion one to be simpler so i will leave it in.
 	;;;QUATERNION SOLUTION:
-	mov al, rotationX
+	mov al, bl
 	movups xmm0, xmmword ptr [XAxis]
 	call QuatAngleAxis
 	movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
 	
-	mov al, rotationY
+	mov cx, bx
+	shr cx, BITS_IN_BYTE
+	mov al, cl
 	movups xmm0, xmmword ptr [YAxis]
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword]
 	call QuatMult
 
 	;;;EULER SOLUTION:
-	;mov al, rotationX
-	;mov cl, rotationY
+	;mov al, bl
+	;mov cx, bx
+	;shr cx, BITS_IN_BYTE
 	;call EulerToQuat
 	;movups xmmword ptr [MAX_RET_LOC - sizeof ymmword * 4 - sizeof xmmword], xmm0
 	;movups xmm0, xmmword ptr [XAxis]
@@ -1088,12 +1093,12 @@ RenderSphere proc
 	movss (Sphere ptr [rcx]).positionZ, xmm2
 
 	mov qword ptr [rbp - sizeof xmmword - sizeof qword], rcx
-	mov al, byte ptr [rotationX]
+	mov al, byte ptr [camRotationX]
 	movups xmm0, xmmword ptr [XAxis]
 	call QuatAngleAxis
 	movups xmmword ptr [rbp - sizeof xmmword], xmm0
 	
-	mov al, rotationY
+	mov al, camRotationY
 	movups xmm0, xmmword ptr [YAxis]
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [rbp - sizeof xmmword]
@@ -1239,7 +1244,7 @@ endFunc:
 RenderSphere endp
 
 ;;renders a cube at some location
-;;ymm0: input x, ymm1: input y, ymm2: input z, stack param: data of cube (Cube struct)
+;;xmm0: input x(real4), xmm1: input y(real4), xmm2: input z (real4), stack param: data of cube (Cube struct)
 RenderCube proc
 	
 	push rbp
@@ -1259,16 +1264,33 @@ RenderCube proc
 	vmovups ymm5, (Cube ptr [rax]).yVert
 	vmovups ymm6, (Cube ptr [rax]).zVert
 
-	vaddps ymm4, ymm4, ymm0
-	vaddps ymm5, ymm5, ymm1
-	vaddps ymm6, ymm6, ymm2
-
 	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
 	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
 	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm6;;;z
+	
+	;i don't want to abstract the following into a macro even though it's used twice, because i don't like passing in instructions as macro arguments.
+	movss xmm12, (Cube ptr [rax]).centre
+	vbroadcastss ymm12, xmm12
+	vaddps ymm4, ymm4, ymm12
+
+	insertps xmm12, (Cube ptr [rax]).centre, INSERT_1_TO_0
+	vbroadcastss ymm12, xmm12
+	vaddps ymm5, ymm5, ymm12
+
+	insertps xmm12, (Cube ptr [rax]).centre, INSERT_2_TO_0
+	vbroadcastss ymm12, xmm12
+	vaddps ymm6, ymm6, ymm12
+
+	movss xmm13, xmm0
+	movss xmm14, xmm1
+	movss xmm15, xmm2
 
 	rotated_points_loc equ rbp - sizeof ymmword * 3
 
+	mov bl, (Cube ptr [rax]).rotationY
+	shl bx, BITS_IN_BYTE
+	mov bl, (Cube ptr [rax]).rotationX
+	
 	RotateVertices rotated_points_loc, 0
 	RotateVertices rotated_points_loc, 1
 	RotateVertices rotated_points_loc, 2
@@ -1283,7 +1305,79 @@ RenderCube proc
 	vmovups ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword * 2]
 	vmovups ymm6, ymmword ptr [rotated_points_loc - sizeof ymmword * 3]
 	
+	movss xmm0, xmm13
+	movss xmm1, xmm14
+	movss xmm2, xmm15
+	vbroadcastss ymm0, xmm0
+	vbroadcastss ymm1, xmm1
+	vbroadcastss ymm2, xmm2
+
+	vaddps ymm4, ymm4, ymm0
+	vaddps ymm5, ymm5, ymm1
+	vaddps ymm6, ymm6, ymm2
+
 	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+
+	movss xmm12, (Cube ptr [rax]).centre
+	vbroadcastss ymm12, xmm12
+	vaddps ymm4, ymm4, ymm12
+
+	insertps xmm12, (Cube ptr [rax]).centre, INSERT_1_TO_0
+	vbroadcastss ymm12, xmm12
+	vaddps ymm5, ymm5, ymm12
+
+	insertps xmm12, (Cube ptr [rax]).centre, INSERT_2_TO_0
+	vbroadcastss ymm12, xmm12
+	vaddps ymm6, ymm6, ymm12
+	
+	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
+	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm6;;;z
+
+	mov bl, byte ptr [camRotationY]
+	shl bx, BITS_IN_BYTE
+	mov bl, byte ptr [camRotationX]
+	
+	RotateVertices rotated_points_loc, 0
+	RotateVertices rotated_points_loc, 1
+	RotateVertices rotated_points_loc, 2
+	RotateVertices rotated_points_loc, 3
+	
+	RotateVertices rotated_points_loc, 4
+	RotateVertices rotated_points_loc, 5
+	RotateVertices rotated_points_loc, 6
+	RotateVertices rotated_points_loc, 7
+	
+	movss xmm0, xmm13
+
+	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+	movups xmm13, (Cube ptr [rax]).centre
+
+	insertps xmm0, xmm14, INSERT_0_TO_1
+	insertps xmm0, xmm15, INSERT_0_TO_2
+	addps xmm13, xmm0
+
+	mov al, byte ptr [camRotationX]
+	movups xmm0, xmmword ptr [XAxis]
+	call QuatAngleAxis
+	movups xmm12, xmm0
+	
+	mov al, byte ptr [camRotationY]
+	movups xmm0, xmmword ptr [YAxis]
+	call QuatAngleAxis
+	movups xmm1, xmm12
+	call QuatMult
+
+	movups xmm1, xmm13
+	call QuatMultVec
+
+	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
+	movups (Cube ptr [rax]).centre, xmm0
+
+	vmovups ymm4, ymmword ptr [rotated_points_loc - sizeof ymmword * 1]
+	vmovups ymm5, ymmword ptr [rotated_points_loc - sizeof ymmword * 2]
+	vmovups ymm6, ymmword ptr [rotated_points_loc - sizeof ymmword * 3]
+	
 	vmovups (Cube ptr [rax]).xVert, ymm4
 	vmovups (Cube ptr [rax]).yVert, ymm5
 	vmovups (Cube ptr [rax]).zVert, ymm6
