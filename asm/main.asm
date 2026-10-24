@@ -351,7 +351,12 @@ clearPastKeyLoop:
 	vmovups ymm0, ymmword ptr [oneVec]
 	vmovups ymm1, singleCube2.xVert
 	vaddps ymm1, ymm1, ymm0
+	vaddps ymm1, ymm1, ymm0
 	vmovups singleCube2.xVert, ymm1
+	movss xmm1, real4 ptr singleCube2.centre
+	addss xmm1, xmm0
+	addss xmm1, xmm0
+	movss real4 ptr singleCube2.centre, xmm1
 	mov word ptr [singleCube2.color], FOREGROUND_RED
 	or word ptr [singleCube2.color], FOREGROUND_BLUE
 	or word ptr [singleCube2.color], FOREGROUND_INTENSITY
@@ -360,8 +365,11 @@ clearPastKeyLoop:
 
 mainLoopHead:
 
-		mov byte ptr [singleCube.rotationX], 0
+		mov byte ptr [singleCube.rotationX], 2
 		mov byte ptr [singleCube.rotationY], 0
+
+		mov byte ptr [singleCube2.rotationX], 0
+		mov byte ptr [singleCube2.rotationY], 2
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -408,12 +416,12 @@ mainLoopHead:
 		mov qword ptr [rsp + 32], rax
 		call RenderCube
 		
-		;vmovups ymm0, ymmword ptr [cameraInputX]
-		;vmovups ymm1, ymmword ptr [cameraInputY]
-		;vmovups ymm2, ymmword ptr [cameraInputZ]
-		;lea rax, singleCube2
-		;mov qword ptr [rsp + 32], rax
-		;call RenderCube
+		vmovups ymm0, ymmword ptr [cameraInputX]
+		vmovups ymm1, ymmword ptr [cameraInputY]
+		vmovups ymm2, ymmword ptr [cameraInputZ]
+		lea rax, singleCube2
+		mov qword ptr [rsp + 32], rax
+		call RenderCube
 
 		;lea rcx, singleSphere
 		;call RenderSphere

@@ -1263,24 +1263,24 @@ RenderCube proc
 	vmovups ymm4, (Cube ptr [rax]).xVert
 	vmovups ymm5, (Cube ptr [rax]).yVert
 	vmovups ymm6, (Cube ptr [rax]).zVert
-
-	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
-	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
-	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm6;;;z
 	
 	;i don't want to abstract the following into a macro even though it's used twice, because i don't like passing in instructions as macro arguments.
 	movss xmm12, (Cube ptr [rax]).centre
 	vbroadcastss ymm12, xmm12
-	vaddps ymm4, ymm4, ymm12
+	vsubps ymm4, ymm4, ymm12
 
-	insertps xmm12, (Cube ptr [rax]).centre, INSERT_1_TO_0
+	lea rdx, (Cube ptr [rax]).centre
+	movss xmm12, real4 ptr [rdx + sizeof real4]
 	vbroadcastss ymm12, xmm12
-	vaddps ymm5, ymm5, ymm12
+	vsubps ymm5, ymm5, ymm12
 
-	insertps xmm12, (Cube ptr [rax]).centre, INSERT_2_TO_0
+	movss xmm12, real4 ptr [rdx + sizeof real4 * 2]
 	vbroadcastss ymm12, xmm12
-	vaddps ymm6, ymm6, ymm12
+	vsubps ymm6, ymm6, ymm12
 
+	vmovups ymmword ptr [rbp - sizeof ymmword * 1], ymm4;;;x
+	vmovups ymmword ptr [rbp - sizeof ymmword * 2], ymm5;;;y
+	vmovups ymmword ptr [rbp - sizeof ymmword * 3], ymm6;;;z
 	movss xmm13, xmm0
 	movss xmm14, xmm1
 	movss xmm15, xmm2
@@ -1322,11 +1322,12 @@ RenderCube proc
 	vbroadcastss ymm12, xmm12
 	vaddps ymm4, ymm4, ymm12
 
-	insertps xmm12, (Cube ptr [rax]).centre, INSERT_1_TO_0
+	lea rdx, (Cube ptr [rax]).centre
+	movss xmm12, real4 ptr [rdx + sizeof real4]
 	vbroadcastss ymm12, xmm12
 	vaddps ymm5, ymm5, ymm12
-
-	insertps xmm12, (Cube ptr [rax]).centre, INSERT_2_TO_0
+	
+	movss xmm12, real4 ptr [rdx + sizeof real4 * 2]
 	vbroadcastss ymm12, xmm12
 	vaddps ymm6, ymm6, ymm12
 	
