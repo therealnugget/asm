@@ -71,7 +71,8 @@ LightDirection real4 0.3, 1.0, 1.6, 0.0
 CameraDirection real4 0.0, 0.0, -1.0, 0.0
 SingleDefVec verticesZOffset, -2.0
 SingleDefVec halves, 0.5
-SingledefVec zeroVec, 0.0
+SingleDefVec zeroVec, 0.0
+SingleDefVec piVec, 3.14159265358979
 oneAt1 real4 0.0, 1.0, 0.0, 0.0
 NanVec dd -1, -1, -1, -1, -1, -1, -1, -1
 NegateFistDword dd -1, 1, 1, 1
@@ -99,6 +100,7 @@ LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
 LAST_LIGHTING_CHAR real4 10.0
 MAX_LIGHTING real4 1.0
 MIN_LIGHTING real4 0.0
+SPHERE_COORD_EXTRAPOLATE_RES real4 4.0
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -1164,11 +1166,55 @@ RenderSphere proc
 	movzx ebx, (SMALL_RECT ptr [charBufferMaxVal]).Right
 	movzx r10d, (SMALL_RECT ptr [charBufferMaxVal]).Bottom
 
+circleRenderHead:
+	vsubps xmm7, xmm8, xmm0
+
+	movaps xmm1, xmm7
+	divps xmm1, xmm12
+	mulps xmm1, xmmword ptr [piVec]
+	movss xmm2, real4 ptr [SPHERE_COORD_EXTRAPOLATE_RES]
+	cvtss2si edx, xmm2
+	;xmm2: resolution * 2
+	mulss xmm2, real4 ptr [two]
+
+cosHead:
+	movss xmm3, xmm1
+	cvtss2si eax, xmm2
+	mov ecx, eax
+
+powerHead:
+	mulss xmm1, xmm3
+	loop powerHead
+
+	cvtss2si ecx, xmm3
+	shr ecx, 1
+	and ecx, 1
+	not ecx
+	shl ecx, 1
+	dec ecx
+	cvtsi2ss xmm4, ecx
+	mulss xmm1, xmm4
+	mov ecx, eax
+
+	movss xmm4, xmm2
+factHead:
+	subss xmm2, real4 ptr [one]
+	mulss xmm4, xmm2
+	loop factHead
+
+	rcpss xmm4, xmm4
+	mulss xmm1, xmm4
+	dec eax
+	test eax, 0
+	jnz cosHead
+	mulss xmm1, real4 ptr [negOne]
+
+	;TODO: test if xmm1 contains cos of orig xmm1
+	
 	;;;TEMP
 	;;;below uses xmm0, xmm5, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12    initially.
 	;;;TEMP
-circleRenderHead:
-	vsubps xmm7, xmm8, xmm0
+
 	mulps xmm7, xmm11
 	dpps xmm7, xmm7, VECTOR_2_DOT_MASK
 	comiss xmm7, xmm5

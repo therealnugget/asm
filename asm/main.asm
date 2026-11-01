@@ -423,8 +423,8 @@ mainLoopHead:
 		mov qword ptr [rsp + 32], rax
 		call RenderCube
 
-		;lea rcx, singleSphere
-		;call RenderSphere
+		lea rcx, singleSphere
+		call RenderSphere
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]
