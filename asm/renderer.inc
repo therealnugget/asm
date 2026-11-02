@@ -21,6 +21,7 @@ DESTROY_HIGH_WORD equ 0ffffh
 ADD_HIGH_WORD equ 0ffff0000h
 SIGN_BIT_WORD equ 8000h
 CUBE_INDEX_BUFFER_NUM_TRI equ 6 * 2
+SPHERE_COORD_EXTRAPOLATE_RES equ 4
 
 FOREGROUND_NEUTRAL equ 0h
 FOREGROUND_BLUE equ 1h
@@ -100,7 +101,6 @@ LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
 LAST_LIGHTING_CHAR real4 10.0
 MAX_LIGHTING real4 1.0
 MIN_LIGHTING real4 0.0
-SPHERE_COORD_EXTRAPOLATE_RES real4 4.0
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -1121,7 +1121,7 @@ RenderSphere proc
 	movss (Sphere ptr [rcx]).positionZ, xmm2
 	
 	comiss xmm2, real4 ptr [zero]
-	ja endFunc
+	jae endFunc
 
 	;xmm5: square radius
 	movss xmm5, (Sphere ptr [rcx]).radiusSqr
@@ -1171,43 +1171,55 @@ circleRenderHead:
 
 	movaps xmm1, xmm7
 	divps xmm1, xmm12
+	movss xmm6, real4 ptr [zero]
+	;xmm1: range from negative pi to pi to take the cos value of, "x"
 	mulps xmm1, xmmword ptr [piVec]
-	movss xmm2, real4 ptr [SPHERE_COORD_EXTRAPOLATE_RES]
-	cvtss2si edx, xmm2
-	;xmm2: resolution * 2
-	mulss xmm2, real4 ptr [two]
+	;edx: current resolution
+	mov edx, SPHERE_COORD_EXTRAPOLATE_RES
+	;eax: double current resolution
 
 cosHead:
 	movss xmm3, xmm1
-	cvtss2si eax, xmm2
+	mov eax, edx
+	shl eax, 1
 	mov ecx, eax
+	dec ecx
 
 powerHead:
-	mulss xmm1, xmm3
+	mulss xmm3, xmm1
 	loop powerHead
 
-	cvtss2si ecx, xmm3
-	shr ecx, 1
+	mov ecx, edx
 	and ecx, 1
-	not ecx
+	xor ecx, 1
 	shl ecx, 1
 	dec ecx
-	cvtsi2ss xmm4, ecx
-	mulss xmm1, xmm4
-	mov ecx, eax
 
+	cvtsi2ss xmm4, ecx
+	mulss xmm3, xmm4
+
+	cvtsi2ss xmm2, eax
 	movss xmm4, xmm2
+	mov ecx, eax
+	;subbing by 2 to get rid of cases where xmm2 is 0 and 1
+	sub ecx, 2
+	mov r8d, 1
+	cmp ecx, 1
+	cmovl ecx, r8d
 factHead:
 	subss xmm2, real4 ptr [one]
 	mulss xmm4, xmm2
 	loop factHead
 
-	rcpss xmm4, xmm4
-	mulss xmm1, xmm4
-	dec eax
-	test eax, 0
+	;rcpss xmm4, xmm4
+	divss xmm3, xmm4
+	addss xmm6, xmm3
+
+	dec edx
+	test edx, -1
 	jnz cosHead
-	mulss xmm1, real4 ptr [negOne]
+	addss xmm6, real4 ptr [one]
+	mulss xmm6, real4 ptr [negOne]
 
 	;TODO: test if xmm1 contains cos of orig xmm1
 	

@@ -112,7 +112,7 @@ Sphere struct
 	
 	positionX real4 0.0
 	positionY real4 0.0
-	positionZ real4 -1.0
+	positionZ real4 0.0
 
 	radiusSqr real4 500.0
 
