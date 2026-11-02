@@ -1071,6 +1071,59 @@ RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 	vmovups ymmY, ymmword ptr [yLoc]
 endm
 
+TaylorCos macro xmmInt1, xmmInt2, xmmInt3, xmmInt4, xmmResult, xmmRadius, GPRD1, GPRD2, GPRD3, GPRD4, cosHead, factHead, powerHead
+	divss xmmInt1, xmmRadius
+	;xmmInt1: range from negative pi to pi to take the cos value of, "x"
+	mulss xmmInt1, real4 ptr [piVec]
+
+	movss xmmResult, real4 ptr [zero]
+	;GPRD1: double current resolution
+	;GPRD3: current resolution
+	mov GPRD3, SPHERE_COORD_EXTRAPOLATE_RES
+
+cosHead:
+	movss xmmInt3, xmmInt1
+	mov GPRD1, GPRD3
+	shl GPRD1, 1
+	mov GPRD2, GPRD1
+	dec GPRD2
+
+powerHead:
+	mulss xmmInt3, xmmInt1
+	loop powerHead
+
+	mov GPRD2, GPRD3
+	and GPRD2, 1
+	xor GPRD2, 1
+	shl GPRD2, 1
+	dec GPRD2
+
+	cvtsi2ss xmmInt4, GPRD2
+	mulss xmmInt3, xmmInt4
+
+	cvtsi2ss xmmInt2, GPRD1
+	movss xmmInt4, xmmInt2
+	mov GPRD2, GPRD1
+	;subbing by 2 to get rid of cases where xmmInt2 is 0 and 1
+	sub GPRD2, 2
+	mov GPRD4, 1
+	cmp GPRD2, 1
+	cmovl GPRD2, GPRD4
+factHead:
+	subss xmmInt2, real4 ptr [one]
+	mulss xmmInt4, xmmInt2
+	loop factHead
+
+	;rcpss xmmInt4, xmmInt4
+	divss xmmInt3, xmmInt4
+	addss xmmResult, xmmInt3
+
+	dec GPRD3
+	test GPRD3, -1
+	jnz cosHead
+	addss xmmResult, real4 ptr [one]
+endm
+
 ;;renders a billboard circle at a point in world space.
 ;;rcx: pointer to Sphere struct data.
 RenderSphere proc
@@ -1168,66 +1221,26 @@ RenderSphere proc
 
 circleRenderHead:
 	vsubps xmm7, xmm8, xmm0
-
-	movaps xmm1, xmm7
-	divps xmm1, xmm12
-	movss xmm6, real4 ptr [zero]
-	;xmm1: range from negative pi to pi to take the cos value of, "x"
-	mulps xmm1, xmmword ptr [piVec]
-	;edx: current resolution
-	mov edx, SPHERE_COORD_EXTRAPOLATE_RES
-	;eax: double current resolution
-
-cosHead:
-	movss xmm3, xmm1
-	mov eax, edx
-	shl eax, 1
-	mov ecx, eax
-	dec ecx
-
-powerHead:
-	mulss xmm3, xmm1
-	loop powerHead
-
-	mov ecx, edx
-	and ecx, 1
-	xor ecx, 1
-	shl ecx, 1
-	dec ecx
-
-	cvtsi2ss xmm4, ecx
-	mulss xmm3, xmm4
-
-	cvtsi2ss xmm2, eax
-	movss xmm4, xmm2
-	mov ecx, eax
-	;subbing by 2 to get rid of cases where xmm2 is 0 and 1
-	sub ecx, 2
-	mov r8d, 1
-	cmp ecx, 1
-	cmovl ecx, r8d
-factHead:
-	subss xmm2, real4 ptr [one]
-	mulss xmm4, xmm2
-	loop factHead
-
-	;rcpss xmm4, xmm4
-	divss xmm3, xmm4
-	addss xmm6, xmm3
-
-	dec edx
-	test edx, -1
-	jnz cosHead
-	addss xmm6, real4 ptr [one]
-	mulss xmm6, real4 ptr [negOne]
-
-	;TODO: test if xmm1 contains cos of orig xmm1
-	
-	;;;TEMP
-	;;;below uses xmm0, xmm5, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12    initially.
-	;;;TEMP
-
 	mulps xmm7, xmm11
+
+	insertps xmm1, xmm7, INSERT_1_TO_0
+	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1_2, lbl2_2, lbl3_2
+	
+	;only first two scalars are used in xmm7 so far
+	insertps xmm7, xmm6, INSERT_0_TO_2
+	
+	movss xmm1, xmm7
+	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
+	insertps xmm6, xmm7, INSERT_2_TO_1
+	;xmm6: (cos(x), cos(y))
+
+	mulps xmm6, xmm12
+
+
+	;;;TEMP
+	;;;below uses xmm0, xmm5, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12
+	;;;TEMP
+
 	dpps xmm7, xmm7, VECTOR_2_DOT_MASK
 	comiss xmm7, xmm5
 	seta r8b
