@@ -1147,7 +1147,8 @@ RenderSphere proc
 	movss (Sphere ptr [rcx]).positionY, xmm1
 	movss (Sphere ptr [rcx]).positionZ, xmm2
 
-	mov qword ptr [rbp - sizeof xmmword - sizeof qword], rcx
+	SPHERE_DATA_STACK_LOC equ rbp - sizeof xmmword - sizeof qword
+	mov qword ptr [SPHERE_DATA_STACK_LOC], rcx
 	mov al, byte ptr [camRotationX]
 	movups xmm0, xmmword ptr [XAxis]
 	call QuatAngleAxis
@@ -1158,14 +1159,14 @@ RenderSphere proc
 	call QuatAngleAxis
 	movups xmm1, xmmword ptr [rbp - sizeof xmmword]
 	call QuatMult
-	mov rcx, qword ptr [rbp - sizeof xmmword - sizeof qword]
+	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
 
 	movss xmm1, (Sphere ptr [rcx]).positionX
 	insertps xmm1, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
 	insertps xmm1, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
 	call QuatMultVec
 	movups xmmword ptr [rbp - sizeof xmmword], xmm0
-	mov rcx, qword ptr [rbp - sizeof xmmword - sizeof qword]
+	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
 
 	movss (Sphere ptr [rcx]).positionX, xmm0
 	movss xmm1, real4 ptr [rbp - sizeof real4 * 3]
@@ -1228,13 +1229,29 @@ circleRenderHead:
 	
 	;only first two scalars are used in xmm7 so far
 	insertps xmm7, xmm6, INSERT_0_TO_2
+
+	insertps xmm7, xmm7, INSERT_2_TO_3
 	
 	movss xmm1, xmm7
 	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
 	insertps xmm6, xmm7, INSERT_2_TO_1
 	;xmm6: (cos(x), cos(y))
 
+	movss xmm1, xmm6
+	mulss xmm1, xmm1
+	insertps xmm2, xmm7, INSERT_3_TO_0
+	mulss xmm2, xmm2
+	addss xmm1, xmm2
+	mulss xmm1, real4 ptr [negOne]
+	addss xmm1, real4 ptr [one]
+
+	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
+	mulss xmm2, (Sphere ptr [rcx]).positionZ
+
 	mulps xmm6, xmm12
+	movss xmm1, (Sphere ptr [rcx]).positionX
+	insertps xmm1, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
+	addps xmm6, xmm1
 
 
 	;;;TEMP
