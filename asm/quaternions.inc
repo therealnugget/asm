@@ -23,10 +23,12 @@ EQU_VEC_CMP equ 0h
 PI_ON_4 equ 63
 ABS_DWORD equ 7FFFFFFFh
 
+align 16
 SingleDefVec negOneVec, -1.0
 SingleDefVec oneVec, 1.0
 SingleDefVec twoVec, 2.0
 SingleDefVec negTwoVec, -2.0
+SingleDefVec halfVec, 0.5
 MAX_SIN_AMP real4 127.0
 one real4 1.0
 zero real4 0.0
@@ -39,7 +41,6 @@ acos_iteration_1 real4 0.0742610
 acos_iteration_2 real4 -0.2121144
 acos_iteration_3 real4 1.5707288
 forward_vector3 real4 0.0, 0.0, 1.0, 0.0
-pi real4 3.14159265358979
 piSqrd real4 9.869604401089
 align 16
 ABS_VALUE_MASK_F dd 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh
@@ -83,7 +84,7 @@ Acos proc
 	sqrtss xmm0, xmm0
 	mulss xmm1, xmm0;ret *= sqrt(1.0 - x)
 	vmulss xmm3, xmm1, negTwo
-	addss xmm3, pi
+	addss xmm3, real4 ptr [piVec]
 	pand xmm3, xmm2
 	addss xmm1, xmm3
 	movss xmm0, xmm1

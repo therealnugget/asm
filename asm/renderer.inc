@@ -1071,10 +1071,10 @@ RestoreRasterizationPoints macro ymmX, ymmY, xLoc, yLoc
 	vmovups ymmY, ymmword ptr [yLoc]
 endm
 
-TaylorCos macro xmmInt1, xmmInt2, xmmInt3, xmmInt4, xmmResult, xmmRadius, GPRD1, GPRD2, GPRD3, GPRD4, cosHead, factHead, powerHead
-	divss xmmInt1, xmmRadius
-	;xmmInt1: range from negative pi to pi to take the cos value of, "x"
-	mulss xmmInt1, real4 ptr [piVec]
+TaylorCos macro xmmInput, xmmInt2, xmmInt3, xmmInt4, xmmResult, xmmRadius, GPRD1, GPRD2, GPRD3, GPRD4, cosHead, factHead, powerHead
+	divss xmmInput, xmmRadius
+	;xmmInput: range from negative pi to pi to take the cos value of, "x"
+	mulss xmmInput, real4 ptr [piVec]
 
 	movss xmmResult, real4 ptr [zero]
 	;GPRD1: double current resolution
@@ -1082,14 +1082,14 @@ TaylorCos macro xmmInt1, xmmInt2, xmmInt3, xmmInt4, xmmResult, xmmRadius, GPRD1,
 	mov GPRD3, SPHERE_COORD_EXTRAPOLATE_RES
 
 cosHead:
-	movss xmmInt3, xmmInt1
+	movss xmmInt3, xmmInput
 	mov GPRD1, GPRD3
 	shl GPRD1, 1
 	mov GPRD2, GPRD1
 	dec GPRD2
 
 powerHead:
-	mulss xmmInt3, xmmInt1
+	mulss xmmInt3, xmmInput
 	loop powerHead
 
 	mov GPRD2, GPRD3
@@ -1224,21 +1224,21 @@ circleRenderHead:
 	vsubps xmm7, xmm8, xmm0
 	mulps xmm7, xmm11
 
-	insertps xmm1, xmm7, INSERT_1_TO_0
-	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1_2, lbl2_2, lbl3_2
+	;insertps xmm1, xmm7, INSERT_1_TO_0
+	;TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1_2, lbl2_2, lbl3_2
+	;
+	;;only first two scalars are used in xmm7 so far
+	;insertps xmm7, xmm6, INSERT_0_TO_2
+	;
+	;movss xmm1, xmm7
+	;TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
 	
-	;only first two scalars are used in xmm7 so far
-	insertps xmm7, xmm6, INSERT_0_TO_2
-
-	movss xmm1, xmm7
-	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
-	insertps xmm6, xmm7, INSERT_2_TO_1
-	;xmm6: (cos(x), cos(y))
-
+	movaps xmm6, xmm7
+	divps xmm6, xmm12
 	movss xmm1, xmm6
 	mulss xmm1, xmm1
 	mulss xmm1, real4 ptr [negOne]
-	insertps xmm2, xmm7, INSERT_2_TO_0
+	insertps xmm2, xmm6, INSERT_1_TO_0
 	mulss xmm2, xmm2
 	subss xmm1, xmm2
 	addss xmm1, real4 ptr [one]
@@ -1253,11 +1253,10 @@ circleRenderHead:
 	insertps xmm2, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
 	addps xmm6, xmm2
 
-	pand xmm6, xmmword ptr [ABS_VALUE_MASK_F]
 	Vec3NormalizeMacro xmm6, xmm1, xmm2
 	Vector3Dot xmm6, xmmword ptr [LightDirection]
 	addss xmm6, real4 ptr [one]
-	mulss xmm6, real4 ptr [two]
+	mulss xmm6, real4 ptr [oneHalf]
 	mulss xmm6, real4 ptr [LAST_LIGHTING_CHAR]
 	cvtss2si r12d, xmm6
 	lea r11, LIGHTING_CHARS
