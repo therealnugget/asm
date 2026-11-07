@@ -847,11 +847,11 @@ rasterizeYHead:
 		insertps xmm1, real4 ptr [rbp - 72], INSERT_0_TO_0
 		insertps xmm1, real4 ptr [rbp - 76], INSERT_0_TO_1
 
-		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
-
-		;latter xmm is intermediate
-		Vec3NormalizeMacro xmm1, xmm0
+		;latter xmms are intermediates
+		Vec3NormalizeMacro xmm1, xmm0, xmm3
 		Vector3Dot xmm1, xmmword ptr [LightDirection]
+
+		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
 
 		addss xmm1, LightingOffset
 		mulss xmm1, LightingScale
@@ -1177,7 +1177,7 @@ RenderSphere proc
 	comiss xmm2, real4 ptr [zero]
 	jae endFunc
 
-	;xmm5: square radius
+	;xmm5: sphere radius
 	movss xmm5, (Sphere ptr [rcx]).radiusSqr
 
 	mov r15w, (Sphere ptr [rcx]).color
@@ -1230,8 +1230,6 @@ circleRenderHead:
 	;only first two scalars are used in xmm7 so far
 	insertps xmm7, xmm6, INSERT_0_TO_2
 
-	insertps xmm7, xmm7, INSERT_2_TO_3
-	
 	movss xmm1, xmm7
 	TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
 	insertps xmm6, xmm7, INSERT_2_TO_1
@@ -1239,39 +1237,36 @@ circleRenderHead:
 
 	movss xmm1, xmm6
 	mulss xmm1, xmm1
-	insertps xmm2, xmm7, INSERT_3_TO_0
-	mulss xmm2, xmm2
-	addss xmm1, xmm2
 	mulss xmm1, real4 ptr [negOne]
+	insertps xmm2, xmm7, INSERT_2_TO_0
+	mulss xmm2, xmm2
+	subss xmm1, xmm2
 	addss xmm1, real4 ptr [one]
+	pand xmm1, xmmword ptr [ABS_VALUE_MASK_F]
+	sqrtss xmm1, xmm1
+	insertps xmm6, xmm1, INSERT_0_TO_2
 
 	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
-	mulss xmm2, (Sphere ptr [rcx]).positionZ
-
 	mulps xmm6, xmm12
-	movss xmm1, (Sphere ptr [rcx]).positionX
-	insertps xmm1, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
-	addps xmm6, xmm1
+	movss xmm2, (Sphere ptr [rcx]).positionX
+	insertps xmm2, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
+	insertps xmm2, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
+	addps xmm6, xmm2
 
-
-	;;;TEMP
-	;;;below uses xmm0, xmm5, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12
-	;;;TEMP
+	pand xmm6, xmmword ptr [ABS_VALUE_MASK_F]
+	Vec3NormalizeMacro xmm6, xmm1, xmm2
+	Vector3Dot xmm6, xmmword ptr [LightDirection]
+	addss xmm6, real4 ptr [one]
+	mulss xmm6, real4 ptr [two]
+	mulss xmm6, real4 ptr [LAST_LIGHTING_CHAR]
+	cvtss2si r12d, xmm6
+	lea r11, LIGHTING_CHARS
+	add r11, r12
+	mov r11b, byte ptr [r11]
 
 	dpps xmm7, xmm7, VECTOR_2_DOT_MASK
 	comiss xmm7, xmm5
 	seta r8b
-
-	vdivss xmm1, xmm7, xmm5
-	movss xmm2, xmm1
-	mulss xmm2, real4 ptr [two]
-	subss xmm2, real4 ptr [one]
-	mulss xmm3, xmm2
-	mulss xmm1, real4 ptr [LAST_LIGHTING_CHAR]
-	cvtss2si r12d, xmm1
-	lea r11, LIGHTING_CHARS
-	add r11, r12
-	mov r11b, byte ptr [r11]
 
 	cvttps2dq xmm7, xmm8
 	movd eax, xmm7

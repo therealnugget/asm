@@ -2,7 +2,7 @@ ifndef quaternionInc
 .data
 quaternionInc equ 1
 QUATERNION_DOT_MASK equ 0f1h
-VECTOR3_DOT_MASK equ 071h
+VECTOR_3_DOT_MASK equ 071h
 VECTOR_2_DOT_MASK equ 031h
 ;;i.e. highest to lowest
 W_TO_X_MASK equ 3h
@@ -40,6 +40,7 @@ acos_iteration_2 real4 -0.2121144
 acos_iteration_3 real4 1.5707288
 forward_vector3 real4 0.0, 0.0, 1.0, 0.0
 pi real4 3.14159265358979
+piSqrd real4 9.869604401089
 align 16
 ABS_VALUE_MASK_F dd 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh, 7FFFFFFFh
 QUATERNION_W_EXTRACTION dd 0, 0, 0, -1
@@ -113,7 +114,7 @@ endm
 
 ;xmmReg0: vector a, xmmReg1: vector b. high order bits of xmmReg0 are cleared, bits [255:128] of xmmReg0 are not affected
 Vector3Dot macro xmmReg0, xmmReg1
-	dpps xmmReg0, xmmReg1, VECTOR3_DOT_MASK
+	dpps xmmReg0, xmmReg1, VECTOR_3_DOT_MASK
 endm
 
 ;xmmReg: quaternion to test the squared length of. high order bits of xmmReg are cleared, bits [255:128] of ymmReg are not affected
@@ -132,7 +133,7 @@ QuatLength endp
 ;normalizes quaternion in xmm0
 QuatNormalize proc
 	dpps xmm0, xmm0, QUATERNION_DOT_MASK
-	vcmpss xmm2, xmm0, zero, GREATER_VEC_CMP
+	vcmpss xmm2, xmm0, real4 ptr [zero], GREATER_VEC_CMP
 	vbroadcastss xmm2, xmm2
 	rsqrtss xmm1, xmm0
 	vbroadcastss xmm1, xmm1
@@ -170,7 +171,7 @@ QuatMult proc
 	pshufd xmm3, xmm4, W_TO_X_MASK;w of a in xmm3
 	pshufd xmm1, xmm5, W_TO_X_MASK;w of b in xmm1
 	;all bits higher than least significant single-precision floating point value are zeroed
-	dpps xmm4, xmm5, VECTOR3_DOT_MASK
+	dpps xmm4, xmm5, VECTOR_3_DOT_MASK
 	mulss xmm1, xmm3
 	subss xmm1, xmm4
 	insertps xmm0, xmm1, INSERT_X_TO_W
@@ -281,19 +282,25 @@ QuatAxis endp
 Vec3Normalize proc
 	movaps xmm1, xmm0
 	Vector3Dot xmm0, xmm0
+	vcmpss xmm2, xmm0, real4 ptr [zero], GREATER_VEC_CMP
+	vbroadcastss xmm2, xmm2
 	rsqrtss xmm0, xmm0
 	vbroadcastss xmm0, xmm0
 	mulps xmm0, xmm1
+	pand xmm0, xmm2
 	ret
 Vec3Normalize endp
 
 ;normalizes xmmVec as a vector3. xmmInt1 and xmmInt2 are intermediate xmm registers.
-Vec3NormalizeMacro macro xmmVec, xmmInt1
+Vec3NormalizeMacro macro xmmVec, xmmInt1, xmmInt2
 	movaps xmmInt1, xmmVec
 	Vector3Dot xmmVec, xmmVec
+	vcmpss xmmInt2, xmmVec, real4 ptr [zero], GREATER_VEC_CMP
+	vbroadcastss xmmInt2, xmmInt2
 	rsqrtss xmmVec, xmmVec
 	vbroadcastss xmmVec, xmmVec
 	mulps xmmVec, xmmInt1
+	pand xmmVec, xmmInt2
 endm
 
 ;al: a value in the range [0:255] which represents angle, xmm0: vector3. returns the quaternion Rotated around the axis in xmm0

@@ -253,7 +253,7 @@ main proc
 	sub rsp, 32 + 16
 
 	movups xmm0, xmmword ptr [LightDirection]
-	Vec3NormalizeMacro xmm0, xmm1
+	Vec3NormalizeMacro xmm0, xmm1, xmm2
 	movups xmmword ptr [LightDirection], xmm0
 	
 	call GetProcessHeap
