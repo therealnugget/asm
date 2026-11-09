@@ -101,6 +101,7 @@ LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
 LAST_LIGHTING_CHAR real4 10.0
 MAX_LIGHTING real4 1.0
 MIN_LIGHTING real4 0.0
+sphereMagicRadiusValue real4 0.4
 .code
 
 ConvertHorizonPtToVert macro MAX_RET_LOC, VERTEX_OFFSET
@@ -1124,7 +1125,7 @@ factHead:
 	addss xmmResult, real4 ptr [one]
 endm
 
-;;renders a billboard circle at a point in world space.
+;;this technically doesn't render a sphere, it just renders a really convincing cirlce
 ;;rcx: pointer to Sphere struct data.
 RenderSphere proc
 	push rbx
@@ -1224,44 +1225,9 @@ circleRenderHead:
 	vsubps xmm7, xmm8, xmm0
 	mulps xmm7, xmm11
 
-	;insertps xmm1, xmm7, INSERT_1_TO_0
-	;TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1_2, lbl2_2, lbl3_2
-	;
-	;;only first two scalars are used in xmm7 so far
-	;insertps xmm7, xmm6, INSERT_0_TO_2
-	;
-	;movss xmm1, xmm7
-	;TaylorCos xmm1, xmm2, xmm3, xmm4, xmm6, xmm12, eax, ecx, edx, r8d, lbl1, lbl2, lbl3
-	
 	movaps xmm6, xmm7
 	divps xmm6, xmm12
-	movss xmm1, xmm6
-	mulss xmm1, xmm1
-	mulss xmm1, real4 ptr [negOne]
-	insertps xmm2, xmm6, INSERT_1_TO_0
-	mulss xmm2, xmm2
-	subss xmm1, xmm2
-	addss xmm1, real4 ptr [one]
-	pand xmm1, xmmword ptr [ABS_VALUE_MASK_F]
-	sqrtss xmm1, xmm1
-	insertps xmm6, xmm1, INSERT_0_TO_2
-
-	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
-	mulps xmm6, xmm12
-	movss xmm2, (Sphere ptr [rcx]).positionX
-	insertps xmm2, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
-	insertps xmm2, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
-	addps xmm6, xmm2
-
-	Vec3NormalizeMacro xmm6, xmm1, xmm2
-	Vector3Dot xmm6, xmmword ptr [LightDirection]
-	addss xmm6, real4 ptr [one]
-	mulss xmm6, real4 ptr [oneHalf]
-	mulss xmm6, real4 ptr [LAST_LIGHTING_CHAR]
-	cvtss2si r12d, xmm6
-	lea r11, LIGHTING_CHARS
-	add r11, r12
-	mov r11b, byte ptr [r11]
+	divps xmm6, xmm11
 
 	dpps xmm7, xmm7, VECTOR_2_DOT_MASK
 	comiss xmm7, xmm5
@@ -1285,6 +1251,43 @@ circleRenderHead:
 	or r8b, r9b
 	test r8b, 1
 	jnz noRender
+	
+	;z = sqrt(-y^2-x^2+1)
+	movss xmm1, xmm6
+	mulss xmm1, xmm1
+	mulss xmm1, real4 ptr [negOne]
+	insertps xmm2, xmm6, INSERT_1_TO_0
+	mulss xmm2, xmm2
+	subss xmm1, xmm2
+	addss xmm1, real4 ptr [one]
+	pand xmm1, xmmword ptr [ABS_VALUE_MASK_F]
+	sqrtss xmm1, xmm1
+	insertps xmm6, xmm1, INSERT_0_TO_2
+	
+	mulps xmm6, xmm11
+	mulps xmm6, xmm12
+	
+	mov rcx, qword ptr [SPHERE_DATA_STACK_LOC]
+	movss xmm2, (Sphere ptr [rcx]).positionX
+	insertps xmm2, (Sphere ptr [rcx]).positionY, INSERT_0_TO_1
+	insertps xmm2, (Sphere ptr [rcx]).positionZ, INSERT_0_TO_2
+	addps xmm6, xmm2
+	insertps xmm2, xmm2, INSERT_2_TO_0
+	;if it ain't broke, don't fix it.
+	mulss xmm1, real4 ptr [sphereMagicRadiusValue]
+	addss xmm2, xmm1
+	insertps xmm4, xmm2, INSERT_0_TO_1
+
+	Vec3NormalizeMacro xmm6, xmm1, xmm2
+	Vector3Dot xmm6, xmmword ptr [LightDirection]
+	mulss xmm6, real4 ptr [negOne]
+	addss xmm6, real4 ptr [one]
+	mulss xmm6, real4 ptr [oneHalf]
+	mulss xmm6, real4 ptr [LAST_LIGHTING_CHAR]
+	cvtss2si r12d, xmm6
+	lea r11, LIGHTING_CHARS 
+	add r11, r12
+	mov r11b, byte ptr [r11]
 
 	;the below only uses eax and edx.
 	mov r8d, eax
@@ -1298,6 +1301,12 @@ circleRenderHead:
 	add eax, edx
 	mov r9d, sizeof CHAR_INFO
 	mul r9d
+	mov r9, zBuffer
+	movss xmm1, real4 ptr [rax + r9]
+	insertps xmm2, xmm4, INSERT_1_TO_0
+	comiss xmm1, xmm2
+	jae noRender
+	movss real4 ptr [rax + r9], xmm2
 	add rax, qword ptr [charBuffer]
 	mov byte ptr [rax], r11b
 	mov word ptr [rax + sizeof word], r15w
@@ -1495,8 +1504,8 @@ RenderCube proc
 	vmulps ymm0, ymm2, ymmword ptr [halves]
 	vmulps ymm1, ymm3, ymmword ptr [halves]
 
-	vaddps ymm4, ymm4, ymm0;final x floating-point vertices
-	vaddps ymm5, ymm5, ymm1;final y floating-point vertices
+	vaddps ymm4, ymm4, ymm0;final x floating-point screen space vertices
+	vaddps ymm5, ymm5, ymm1;final y floating-point screen space vertices
 	
 	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
 	mov ax, (Cube ptr [rax]).color

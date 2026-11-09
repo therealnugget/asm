@@ -139,7 +139,7 @@ SingleDefVec cubeScaleVec, 1.0
 SingleDefVec cameraInputX, 0.0
 SingleDefVec cameraInputY, 0.0
 SingleDefVec cameraInputZ, 0.0
-moveSpeed real4 3.0
+moveSpeed real4 10.0
 rotationSpeed real4 140.0
 timerQuadpartSecondDivisor real4 1000000.0
 frequency LARGE_INTEGER {{?, ?}}
@@ -367,7 +367,7 @@ clearPastKeyLoop:
 
 mainLoopHead:
 
-		mov byte ptr [singleCube.rotationX], 2
+		mov byte ptr [singleCube.rotationX], 0
 		mov byte ptr [singleCube.rotationY], 0
 
 		mov byte ptr [singleCube2.rotationX], 0
@@ -411,22 +411,22 @@ mainLoopHead:
 		lea rcx, CameraDirection
 		call RotateVecByInput
 
-		;movss xmm0, real4 ptr [cameraInputX]
-		;movss xmm1, real4 ptr [cameraInputY]
-		;movss xmm2, real4 ptr [cameraInputZ]
-		;lea rax, singleCube
-		;mov qword ptr [rsp + 32], rax
-		;call RenderCube
-		;
-		;vmovups ymm0, ymmword ptr [cameraInputX]
-		;vmovups ymm1, ymmword ptr [cameraInputY]
-		;vmovups ymm2, ymmword ptr [cameraInputZ]
-		;lea rax, singleCube2
-		;mov qword ptr [rsp + 32], rax
-		;call RenderCube
-
 		lea rcx, singleSphere
 		call RenderSphere
+
+		movss xmm0, real4 ptr [cameraInputX]
+		movss xmm1, real4 ptr [cameraInputY]
+		movss xmm2, real4 ptr [cameraInputZ]
+		lea rax, singleCube
+		mov qword ptr [rsp + 32], rax
+		call RenderCube
+		
+		vmovups ymm0, ymmword ptr [cameraInputX]
+		vmovups ymm1, ymmword ptr [cameraInputY]
+		vmovups ymm2, ymmword ptr [cameraInputZ]
+		lea rax, singleCube2
+		mov qword ptr [rsp + 32], rax
+		call RenderCube
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]
