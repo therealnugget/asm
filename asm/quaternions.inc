@@ -108,6 +108,20 @@ VecCross proc
 	;https://en.wikipedia.org/wiki/Cross_product
 VecCross endp
 
+;takes cross product of vecA and vecB and stores in vecA.
+VecCrossMacro macro vecA, vecB, xmmIntermediate
+	movaps xmmIntermediate, vecA
+	pshufd vecA, vecA, SHUFFLE_CROSS_X_0
+	
+	pshufd vecB, vecB, SHUFFLE_CROSS_Y_0
+	mulps vecA, vecB
+	pshufd xmmIntermediate, xmmIntermediate, SHUFFLE_CROSS_Y_0
+	
+	pshufd vecB, vecB, SHUFFLE_CROSS_Y_0
+	mulps vecB, xmmIntermediate
+	subps vecA, vecB
+endm
+
 ;xmmReg0: quaternion a, xmmReg1: quaternion b. high order bits of xmmReg0 are cleared, bits [255:128] of ymmReg0 are not affected
 QuatDot macro xmmReg0, xmmReg1
 	dpps xmmReg0, xmmReg1, QUATERNION_DOT_MASK

@@ -97,10 +97,8 @@ camRotationX db 0
 camRotationY db 0
 zBuffer dq ?
 ;LIGHTING_CHARS db '@', '%', '&', '$', '#', '*', '+', ',', '!', '.', '`'
-LIGHTING_CHARS db '`', '.', '!', ',', '+', '*', '#', '$', '&', '%', '@'
-LAST_LIGHTING_CHAR real4 10.0
-MAX_LIGHTING real4 1.0
-MIN_LIGHTING real4 0.0
+LIGHTING_CHARS db '`', '.', '!', ',', '-', '+', '*', '|', '[', '\', '#', '$', '?', '&', '%', '@'
+LAST_LIGHTING_CHAR real4 15.0
 sphereMagicRadiusValue real4 0.4
 .code
 
@@ -529,14 +527,14 @@ ClampToScreenBounds macro xmmClamp, xmmInt1, maxScreen
 	cmovl xmmClamp, xmmInt1
 endm
 
-;rcx: the first two screen triangle vertices (x1, y1, x2, y2), edx: the last screen triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
+;rcx: the first two screen triangle vertices (x1, y1, x2, y2), rdx: the last screen triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
 ;ymm2:  (xW3, yW2, xW2, yW1, xW1, z3, z2, z1), (where xWorld3 is the lowest real4)
 ;stack param #1: color of triangle
 RasterizeTri proc
 	push rbp
 	mov rbp, rsp
 	MAX_RASTERIZE_REAL4_LOC equ sizeof real4 * 8
-	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4 * 5
+	sub rsp, MAX_RASTERIZE_REAL4_LOC + sizeof ymmword + sizeof real4 * 5 + sizeof real4
 	push r12
 	push r13
 	push r14
@@ -631,6 +629,32 @@ RasterizeTri proc
 
 	shr rdx, NUM_BITS_IN_WORD
 	mov dword ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4], edx
+	
+	movss xmm5, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 3]
+	insertps xmm5, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 4], INSERT_0_TO_1
+	insertps xmm5, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword], INSERT_0_TO_2
+
+	movss xmm6, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 5]
+	insertps xmm6, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 6], INSERT_0_TO_1
+	insertps xmm6, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 1], INSERT_0_TO_2
+
+	movss xmm7, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 7]
+	insertps xmm7, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 1], INSERT_0_TO_1
+	insertps xmm7, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword + sizeof real4 * 2], INSERT_0_TO_2
+
+	vsubps xmm5, xmm6, xmm5
+	vsubps xmm6, xmm7, xmm6
+
+	VecCrossMacro xmm5, xmm6, xmm7
+	;cross product in xmm5
+	Vec3NormalizeMacro xmm5, xmm6, xmm7
+	Vector3Dot xmm5, xmmword ptr [LightDirection]
+	;mulss xmm5, real4 ptr [negOne]
+	addss xmm5, real4 ptr [one]
+	mulss xmm5, real4 ptr [oneHalf]
+
+	SURFACE_NORMAL_LIGHT_CALC_LOC equ MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5 - sizeof real4
+	movss real4 ptr [rbp - SURFACE_NORMAL_LIGHT_CALC_LOC], xmm5
 
 	cvtsi2ss xmm2, r9d
 	cmp r8w, r9w
@@ -854,14 +878,12 @@ rasterizeYHead:
 
 		movss xmm3, real4 ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword - sizeof real4 * 5]
 
-		addss xmm1, LightingOffset
-		mulss xmm1, LightingScale
-		minss xmm1, real4 ptr [MAX_LIGHTING]
-		maxss xmm1, real4 ptr [MIN_LIGHTING]
-		subss xmm1, real4 ptr [MIN_LIGHTING]
-		movss xmm0, real4 ptr [MAX_LIGHTING]
-		subss xmm0, real4 ptr [MIN_LIGHTING]
-		divss xmm1, xmm0
+		;addss xmm1, LightingOffset
+		;mulss xmm1, LightingScale
+		addss xmm1, real4 ptr [rbp - SURFACE_NORMAL_LIGHT_CALC_LOC]
+		mulss xmm1, real4 ptr [oneHalf]
+		minss xmm1, real4 ptr [one]
+		maxss xmm1, real4 ptr [zero]
 
 		mulss xmm1, LAST_LIGHTING_CHAR
 

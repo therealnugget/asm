@@ -114,7 +114,7 @@ Sphere struct
 	positionY real4 0.0
 	positionZ real4 -1.5
 
-	radiusSqr real4 500.0
+	radiusSqr real4 800.0
 
 	color dw FOREGROUND_GREEN
 
@@ -359,8 +359,8 @@ clearPastKeyLoop:
 	addss xmm1, xmm0
 	addss xmm1, xmm0
 	movss real4 ptr singleCube2.centre, xmm1
-	mov word ptr [singleCube2.color], FOREGROUND_RED
-	or word ptr [singleCube2.color], FOREGROUND_BLUE
+	mov word ptr [singleCube2.color], FOREGROUND_BLUE
+	or word ptr [singleCube2.color], FOREGROUND_GREEN
 	or word ptr [singleCube2.color], FOREGROUND_INTENSITY
 
 	or word ptr [singleCube.color], FOREGROUND_GREEN
@@ -371,7 +371,7 @@ mainLoopHead:
 		mov byte ptr [singleCube.rotationY], 0
 
 		mov byte ptr [singleCube2.rotationX], 0
-		mov byte ptr [singleCube2.rotationY], 2
+		mov byte ptr [singleCube2.rotationY], 0
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
