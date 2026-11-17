@@ -1204,6 +1204,8 @@ RenderSphere proc
 	movss xmm5, (Sphere ptr [rcx]).radiusSqr
 
 	mov r15w, (Sphere ptr [rcx]).color
+	mov r13b, byte ptr (Sphere ptr [rcx]).resolution
+	xor r14w, r14w
 	
 	movzx eax, word ptr [charbufferSize]
 	cvtsi2ss xmm3, eax
@@ -1243,7 +1245,7 @@ RenderSphere proc
 	movzx ebx, (SMALL_RECT ptr [charBufferMaxVal]).Right
 	movzx r10d, (SMALL_RECT ptr [charBufferMaxVal]).Bottom
 
-circleRenderHead:
+sphereRenderHead:
 	vsubps xmm7, xmm8, xmm0
 	mulps xmm7, xmm11
 
@@ -1273,6 +1275,13 @@ circleRenderHead:
 	or r8b, r9b
 	test r8b, 1
 	jnz noRender
+
+	mov ax, r14w
+	div r13b
+	inc r14b
+	test ah, -1
+	movd eax, xmm7
+	jnz doPastRender
 	
 	;z = sqrt(-y^2-x^2+1)
 	movss xmm1, xmm6
@@ -1311,7 +1320,7 @@ circleRenderHead:
 	add r11, r12
 	mov r11b, byte ptr [r11]
 
-	;the below only uses eax and edx.
+doPastRender:
 	mov r8d, eax
 	mov eax, edx
 	movzx r9d, word ptr [charbufferSize]
@@ -1335,14 +1344,14 @@ circleRenderHead:
 noRender:
 	addss xmm8, real4 ptr [one]
 	comiss xmm8, xmm9
-	jb circleRenderHead
+	jb sphereRenderHead
 	movss xmm8, xmm0
 	subss xmm8, xmm12
 	addps xmm8, xmmword ptr [oneAt1]
 	vcmpps xmm10, xmm8, xmm9, LESS_VEC_CMP
-	extractps eax, xmm10, INSERT_1
-	test eax, 1
-	jnz circleRenderHead
+	extractps r12d, xmm10, INSERT_1
+	test r12d, 1
+	jnz sphereRenderHead
 
 
 endFunc:

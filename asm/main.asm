@@ -119,7 +119,7 @@ Sphere struct
 	color dw FOREGROUND_GREEN
 
 	;the lower this is, the higher the resolution of the sphere. 2 would be half resolution, 3 a third, and so on.
-	sphereRes db 1
+	resolution db 8
 Sphere ends
 
 align 16
@@ -419,14 +419,14 @@ mainLoopHead:
 		movss xmm2, real4 ptr [cameraInputZ]
 		lea rax, singleCube
 		mov qword ptr [rsp + 32], rax
-		call RenderCube
+		;call RenderCube
 		
 		vmovups ymm0, ymmword ptr [cameraInputX]
 		vmovups ymm1, ymmword ptr [cameraInputY]
 		vmovups ymm2, ymmword ptr [cameraInputZ]
 		lea rax, singleCube2
 		mov qword ptr [rsp + 32], rax
-		call RenderCube
+		;call RenderCube
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]
