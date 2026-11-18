@@ -1,6 +1,9 @@
 ifndef highestInc
 .data
 highestInc equ 1
+;maximum unsigned doubleword value AS a float
+u32_max_f real4 4294967295.0
+
 .code
 ;single defines vector
 SingleDefVec macro vecName, value

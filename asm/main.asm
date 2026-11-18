@@ -2,6 +2,8 @@ include highestInc.inc
 include quaternions.inc
 include input.inc
 include renderer.inc
+include random.inc
+include transformations.inc
 extern GetStdHandle: proc
 extern GetProcessHeap: proc
 extern WriteConsoleA: proc
@@ -39,10 +41,12 @@ BITS_IN_BYTE equ 8
 SW_MAXIMIZE equ 3
 NUM_BITS_IN_WORD equ sizeof word * BITS_IN_BYTE
 NUM_BITS_IN_DWORD equ sizeof dword * BITS_IN_BYTE
+NUM_BITS_IN_QWORD equ sizeof qword * BITS_IN_BYTE
 ;;i know this is the same as above but i'm just being anal (lol).
 NUM_BITS_IN_REAL4 equ sizeof real4 * BITS_IN_BYTE
 TIMER_QUADPART_MULTIPLICAND equ 1000000
 FRAME_WAIT_TIME equ 1
+NUM_CUBES equ 10
 
 COORD struct
 	X dw 0
@@ -119,12 +123,12 @@ Sphere struct
 	color dw FOREGROUND_GREEN
 
 	;the lower this is, the higher the resolution of the sphere. 2 would be half resolution, 3 a third, and so on.
-	resolution db 8
+	resolution db 1
 Sphere ends
 
 align 16
 singleCube Cube {}
-singleCube2 Cube {}
+cubes dq ?
 ;;need to align 16 here so that the first data block of the sphere struct, the "shearVector" is aligned to 16 bytes, as well as the struct itself.
 align 16
 singleSphere Sphere {}
@@ -350,28 +354,17 @@ clearPastKeyLoop:
 	lea rcx, pTime
 	call QueryPerformanceCounter
 
-	vmovups ymm0, ymmword ptr [oneVec]
-	vmovups ymm1, singleCube2.xVert
-	vaddps ymm1, ymm1, ymm0
-	vaddps ymm1, ymm1, ymm0
-	vmovups singleCube2.xVert, ymm1
-	movss xmm1, real4 ptr singleCube2.centre
-	addss xmm1, xmm0
-	addss xmm1, xmm0
-	movss real4 ptr singleCube2.centre, xmm1
-	mov word ptr [singleCube2.color], FOREGROUND_BLUE
-	or word ptr [singleCube2.color], FOREGROUND_GREEN
-	or word ptr [singleCube2.color], FOREGROUND_INTENSITY
+	call SeedRandom
 
-	or word ptr [singleCube.color], FOREGROUND_GREEN
+	lea rcx, [sizeof Cube * NUM_CUBES]
+	call MemAlloc
+	mov qword ptr [cubes], rax
+
 
 mainLoopHead:
 
 		mov byte ptr [singleCube.rotationX], 0
 		mov byte ptr [singleCube.rotationY], 0
-
-		mov byte ptr [singleCube2.rotationX], 0
-		mov byte ptr [singleCube2.rotationY], 0
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -419,14 +412,7 @@ mainLoopHead:
 		movss xmm2, real4 ptr [cameraInputZ]
 		lea rax, singleCube
 		mov qword ptr [rsp + 32], rax
-		;call RenderCube
-		
-		vmovups ymm0, ymmword ptr [cameraInputX]
-		vmovups ymm1, ymmword ptr [cameraInputY]
-		vmovups ymm2, ymmword ptr [cameraInputZ]
-		lea rax, singleCube2
-		mov qword ptr [rsp + 32], rax
-		;call RenderCube
+		call RenderCube
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]

@@ -34,6 +34,7 @@ one real4 1.0
 zero real4 0.0
 negTwo real4 -2.0
 two real4 2.0
+ten real4 10.0
 negOne real4 -1.0
 oneHalf real4 0.5
 acos_iteration_0 real4 -0.0187293

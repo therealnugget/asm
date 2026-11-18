@@ -147,11 +147,15 @@
     <MASM Include="main.asm">
       <FileType>Document</FileType>
     </MASM>
+    <None Include="transformations.inc">
+      <FileType>Document</FileType>
+    </None>
     <None Include="highestInc.inc" />
     <None Include="input.inc">
       <FileType>Document</FileType>
     </None>
     <None Include="quaternions.inc" />
+    <None Include="random.inc" />
     <None Include="renderer.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -5,6 +5,8 @@
     <None Include="input.inc" />
     <None Include="renderer.inc" />
     <None Include="quaternions.inc" />
+    <None Include="random.inc" />
+    <None Include="transformations.inc" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="main.asm" />
