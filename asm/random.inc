@@ -72,25 +72,40 @@ RandFloat proc
 RandFloat endp
 
 ;xmm0 min (signed), xmm1: max (signed). do not reverse order of xmm0 and xmm1.
-RandVec proc
+RandVec3 proc
 	push rbp
 	mov rbp, rsp
-	sub rsp, sizeof real4 * 2
+	sub rsp, sizeof real4 * 4 + 32
+
 	insertps xmm2, xmm0, INSERT_1_TO_0
 	movss real4 ptr [rbp - sizeof real4], xmm2
 	insertps xmm2, xmm1, INSERT_1_TO_0
 	movss real4 ptr [rbp - sizeof real4 * 2], xmm2
+	insertps xmm2, xmm0, INSERT_2_TO_0
+	movss real4 ptr [rbp - sizeof real4 * 3], xmm2
+	insertps xmm2, xmm1, INSERT_2_TO_0
+	movss real4 ptr [rbp - sizeof real4 * 4], xmm2
 	call RandFloat
+
 	movss xmm1, real4 ptr [rbp - sizeof real4 * 2]
 	movss real4 ptr [rbp - sizeof real4 * 2], xmm0
+
 	movss xmm0, real4 ptr [rbp - sizeof real4]
 	call RandFloat
-	insertps xmm0, xmm0, INSERT_0_TO_1
+	movss real4 ptr[rbp - sizeof real4], xmm0
+
+	movss xmm0, real4 ptr [rbp - sizeof real4 * 3]
+	movss xmm1, real4 ptr [rbp - sizeof real4 * 4]
+	call RandFloat
+
+	insertps xmm0, xmm0, INSERT_0_TO_2
 	insertps xmm0, real4 ptr [rbp - sizeof real4 * 2], INSERT_0_TO_0
+	insertps xmm0, real4 ptr [rbp - sizeof real4], INSERT_0_TO_1
+
 	mov rsp, rbp
 	pop rbp
 	ret
-RandVec endp
+RandVec3 endp
 
 ;rcx: min (signed), rdx: max (signed). do not reverse order of rcx and rdx.
 RandInt proc

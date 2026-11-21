@@ -22,6 +22,7 @@ ADD_HIGH_WORD equ 0ffff0000h
 SIGN_BIT_WORD equ 8000h
 CUBE_INDEX_BUFFER_NUM_TRI equ 6 * 2
 SPHERE_COORD_EXTRAPOLATE_RES equ 4
+NUM_NON_VOLATILE_XMM equ 10
 
 FOREGROUND_NEUTRAL equ 0h
 FOREGROUND_BLUE equ 1h
@@ -527,6 +528,42 @@ ClampToScreenBounds macro xmmClamp, xmmInt1, maxScreen
 	cmovl xmmClamp, xmmInt1
 endm
 
+PushXmm macro xmmReg
+	sub rsp, sizeof xmmword
+	movups xmmword ptr [rsp], xmmReg
+endm
+
+PushNonVolatileXmms macro
+	PushXmm xmm6
+	PushXmm xmm7
+	PushXmm xmm8
+	PushXmm xmm9
+	PushXmm xmm10
+	PushXmm xmm11
+	PushXmm xmm12
+	PushXmm xmm13
+	PushXmm xmm14
+	PushXmm xmm15
+endm
+
+PopXmm macro xmmReg
+	movups xmmReg, xmmword ptr [rsp]
+	add rsp, sizeof xmmword
+endm
+
+PopNonVolatileXmms macro
+	PopXmm xmm15
+	PopXmm xmm14
+	PopXmm xmm13
+	PopXmm xmm12
+	PopXmm xmm11
+	PopXmm xmm10
+	PopXmm xmm9
+	PopXmm xmm8
+	PopXmm xmm7
+	PopXmm xmm6
+endm
+
 ;rcx: the first two screen triangle vertices (x1, y1, x2, y2), rdx: the last screen triangle vertex (yWorld3Real4HighPart, yWorld3Real4LowPart, x3, y3). in other words, the registers store the vertex data BACKWARDS for caller simplification so that we can shift the vertices into the registers. (x1, x2, etc. are words, z1, z2, xWorld1, yWorld1, etc. are single-precision floating point values)
 ;ymm2:  (xW3, yW2, xW2, yW1, xW1, z3, z2, z1), (where xWorld3 is the lowest real4)
 ;stack param #1: color of triangle
@@ -540,6 +577,7 @@ RasterizeTri proc
 	push r14
 	push r15 
 	push rbx
+	PushNonVolatileXmms
 
 	vmovups ymmword ptr [rbp - MAX_RASTERIZE_REAL4_LOC - sizeof ymmword], ymm2
 
@@ -931,6 +969,7 @@ rasterizeYHead:
 breakRasterizeY:
 endOfRasterFunc:
 
+	PopNonVolatileXmms
 	pop rbx
 	pop r15
 	pop r14
@@ -1060,6 +1099,9 @@ CheckClockwiseFace proc
 	push rbp
 	mov rbp, rsp
 	sub rsp, sizeof ymmword * 2
+	sub rsp, sizeof xmmword
+	movups xmmword ptr [rsp], xmm6
+
 	dec r8
 	mov rcx, 3
 	mov rax, r8
@@ -1084,6 +1126,7 @@ CheckClockwiseFace proc
 	comiss xmm6, real4 ptr [zero]
 	seta al
 
+	movups xmm6, xmmword ptr [rsp]
 	mov rsp, rbp
 	pop rbp
 	ret
@@ -1155,6 +1198,13 @@ RenderSphere proc
 	push r13
 	push r14
 	push r15
+	PushXmm xmm6
+	PushXmm xmm7
+	PushXmm xmm8
+	PushXmm xmm9
+	PushXmm xmm10
+	PushXmm xmm11
+	PushXmm xmm12
 	push rbp
 	mov rbp, rsp
 	sub rsp, sizeof xmmword + sizeof qword + 40
@@ -1357,30 +1407,37 @@ noRender:
 endFunc:
 	mov rsp, rbp
 	pop rbp
-	pop r12
-	pop r13
-	pop r14
+	PopXmm xmm12
+	PopXmm xmm11
+	PopXmm xmm10
+	PopXmm xmm9
+	PopXmm xmm8
+	PopXmm xmm7
+	PopXmm xmm6
 	pop r15
+	pop r14
+	pop r13
+	pop r12
 	pop rbx
 	ret
 RenderSphere endp
 
-;;renders a cube at some location
+;;renders a cube adjusted for input
 ;;xmm0: input x(real4), xmm1: input y(real4), xmm2: input z (real4), stack param: data of cube (Cube struct)
 RenderCube proc
-	
-	push rbp
-	mov rbp, rsp
-	sub rsp, sizeof ymmword * 3 + sizeof ymmword * 3 + 20h + sizeof ymmword * 4 + sizeof xmmword
 
 	push rbx
 	push r12
 	push r13
 	push r14
 	push r15
+	PushNonVolatileXmms
+	push rbp
+	mov rbp, rsp
+	sub rsp, sizeof ymmword * 3 + sizeof ymmword * 3 + 20h + sizeof ymmword * 4 + sizeof xmmword
 	
-	;add 8 for return address and 8 for original value of rbp
-	CUBE_DATA_PARAM_LOC equ rbp + 32 + 8 + 8
+	;dont forget to add sizeof qword for return address
+	CUBE_DATA_PARAM_LOC equ rbp + 32 + sizeof qword * 7 + sizeof xmmword * NUM_NON_VOLATILE_XMM
 	mov rax, qword ptr [CUBE_DATA_PARAM_LOC]
 	vmovups ymm4, (Cube ptr [rax]).xVert
 	vmovups ymm5, (Cube ptr [rax]).yVert
@@ -1775,14 +1832,15 @@ renderCharHead:
 	loop renderCharHead
 	
 	endif
-
+	
+	mov rsp, rbp
+	pop rbp
+	PopNonVolatileXmms
 	pop r15
 	pop r14
 	pop r13
 	pop r12
 	pop rbx
-	mov rsp, rbp
-	pop rbp
 
 	ret
 RenderCube endp

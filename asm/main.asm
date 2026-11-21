@@ -1,4 +1,5 @@
 include highestInc.inc
+include memory.inc
 include quaternions.inc
 include input.inc
 include renderer.inc
@@ -32,9 +33,6 @@ INVALID_HANDLE_VALUE equ -1
 TRUE equ 1
 FALSE equ 0
 HEAP_GENERATE_EXCEPTIONS equ 4
-;serialization provides mutual exclusion.
-HEAP_NO_SERIALIZE equ 1
-HEAP_ZERO_MEMORY equ 8
 STD_OUTPUT_HANDLE equ -11
 small_rect_size equ sizeof SMALL_RECT
 BITS_IN_BYTE equ 8
@@ -46,7 +44,7 @@ NUM_BITS_IN_QWORD equ sizeof qword * BITS_IN_BYTE
 NUM_BITS_IN_REAL4 equ sizeof real4 * BITS_IN_BYTE
 TIMER_QUADPART_MULTIPLICAND equ 1000000
 FRAME_WAIT_TIME equ 1
-NUM_CUBES equ 10
+NUM_CUBES equ 4
 
 COORD struct
 	X dw 0
@@ -104,8 +102,8 @@ Cube struct
 	;;this is the center point of the cube. it will move and rotate with the cube as the cube moves and rotates, so that it can be subtracted from the vertices to find the vertices at the origin.
 	centre real4 0.0, 0.0, 0.0, 0.0
 
-	rotationX db 0.0
-	rotationY db 0.0
+	rotationX db 0
+	rotationY db 0
 
 	color dw FOREGROUND_BLUE
 Cube ends
@@ -127,8 +125,9 @@ Sphere struct
 Sphere ends
 
 align 16
-singleCube Cube {}
 cubes dq ?
+align 16
+defaultCube Cube {}
 ;;need to align 16 here so that the first data block of the sphere struct, the "shearVector" is aligned to 16 bytes, as well as the struct itself.
 align 16
 singleSphere Sphere {}
@@ -360,11 +359,39 @@ clearPastKeyLoop:
 	call MemAlloc
 	mov qword ptr [cubes], rax
 
+	mov ecx, NUM_CUBES
+cubeDataInitHead:
+	mov ebx, ecx
+
+	mov eax, ecx
+	mov edx, sizeof Cube
+	mul edx
+	mov rdx, qword ptr [cubes]
+
+	lea rcx, Cube ptr [rdx + rax - sizeof Cube]
+	mov r12, rcx
+	lea rdx, defaultCube
+	mov r8, sizeof Cube
+	call MemCopy
+
+	movss xmm0, real4 ptr [negOne]
+	vbroadcastss ymm0, xmm0
+	movss xmm1, real4 ptr [two]
+	vbroadcastss ymm1, xmm1
+	call RandVec3
+
+	mov r9, r12
+	call SetCubePosition
+
+	mov rcx, -16
+	mov rdx, 16
+	call RandInt
+	mov (Cube ptr [r12]).color, ax
+
+	mov ecx, ebx
+	loop cubeDataInitHead
 
 mainLoopHead:
-
-		mov byte ptr [singleCube.rotationX], 0
-		mov byte ptr [singleCube.rotationY], 0
 
 		mov ecx, KEYCODE_CONTROL
 		call GetKey
@@ -407,12 +434,24 @@ mainLoopHead:
 		lea rcx, singleSphere
 		call RenderSphere
 
+		mov ecx, NUM_CUBES
+
+	renderCubeHead:
+		mov ebx, ecx
 		movss xmm0, real4 ptr [cameraInputX]
 		movss xmm1, real4 ptr [cameraInputY]
 		movss xmm2, real4 ptr [cameraInputZ]
-		lea rax, singleCube
+	
+		mov eax, ecx
+		mov edx, sizeof Cube
+		mul edx
+		mov rdx, qword ptr [cubes]
+		lea rax, Cube ptr [rdx + rax - sizeof Cube]
+	
 		mov qword ptr [rsp + 32], rax
 		call RenderCube
+		mov ecx, ebx
+		loop renderCubeHead
 
 		mov rcx, stdOutHandle
 		mov rdx, qword ptr [charBuffer]
@@ -462,26 +501,5 @@ afterMainLoop:
 	call ExitProcess
 	ret
 main endp
-;;does not give mutual exclusion.
-;rcx: qword allocation size. returns location of memory block allocated
-MemAlloc proc
-	mov r8, rcx
-	mov rcx, heapHandle
-	mov rdx, HEAP_NO_SERIALIZE
-	sub rsp, 32
-	call HeapAlloc
-	add rsp, 32
-	ret
-MemAlloc endp
-;rcx: qword location to free. If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. An application can call GetLastError for extended error information.
-MemFree proc
-	mov r8, rcx
-	mov rcx, heapHandle
-	mov rdx, HEAP_NO_SERIALIZE
-	sub rsp, 20h
-	call HeapFree
-	add rsp, 20h
-	ret
-MemFree endp
 
 end

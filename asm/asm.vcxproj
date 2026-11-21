@@ -147,6 +147,7 @@
     <MASM Include="main.asm">
       <FileType>Document</FileType>
     </MASM>
+    <None Include="memory.inc" />
     <None Include="transformations.inc">
       <FileType>Document</FileType>
     </None>
